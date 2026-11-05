@@ -1,6 +1,7 @@
 export const BANDS = 128;
-export const SAMPLES_PER_SECOND = 30;
-export const HISTORY_ROWS = 76;
+export const SAMPLES_PER_SECOND = 60;
+export const HISTORY_SECONDS = 2.5;
+export const HISTORY_ROWS = SAMPLES_PER_SECOND * HISTORY_SECONDS + 2;
 
 const MIN_HZ = 30;
 const MAX_HZ = 16_000;

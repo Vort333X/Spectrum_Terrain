@@ -1,7 +1,7 @@
 :root {
   color-scheme: dark;
   font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  background: #0a090f;
+  background: #000;
   color: #ede9f3;
   font-synthesis: none;
 }
@@ -21,7 +21,7 @@ body {
   gap: 25px;
   min-height: 100vh;
   padding: 29px 24px 23px;
-  background: #121018;
+  background: #000;
   border-right: 1px solid #2a2333;
 }
 
@@ -32,7 +32,7 @@ body {
   margin-bottom: 20px;
   color: #f8977c;
 }
-.brand .tag, .stage-index {
+.brand .tag, .stage-index, #fps {
   color: #a69ab4;
   font: 10px/1.4 ui-monospace, Consolas, monospace;
   letter-spacing: .13em;
@@ -81,7 +81,7 @@ button {
   font-size: 12px;
   cursor: pointer;
 }
-button:hover { background: #30233e; }
+button:hover { background-color: #30233e; }
 button:focus-visible { outline: 2px solid #ffc1ac; outline-offset: 3px; }
 button:disabled { opacity: .5; cursor: default; }
 button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; }
@@ -142,7 +142,7 @@ button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; 
   min-height: 100vh;
   isolation: isolate;
   overflow: hidden;
-  background: radial-gradient(ellipse at 52% 55%, #10201e, #090d10 68%);
+  background: #000;
 }
 #stage canvas { display: block; position: absolute; inset: 0; touch-action: none; }
 #stage canvas:active { cursor: grabbing; }
@@ -173,7 +173,7 @@ button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; 
   white-space: nowrap;
   padding: 2px 4px;
   border-radius: 3px;
-  background: #0e0a16b0;
+  background: #000b;
 }
 #stage-error {
   position: absolute;

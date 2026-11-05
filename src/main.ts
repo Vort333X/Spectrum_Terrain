@@ -7,7 +7,7 @@ declare global {
   }
 }
 
-const STEP = 1 / SAMPLES_PER_SECOND;
+const WALLPAPER_SAMPLE_RATE = 30;
 const WALLPAPER_BANDS = 64;
 
 function start() {
@@ -15,6 +15,7 @@ function start() {
   const monitorButton = document.querySelector<HTMLButtonElement>('#monitor')!;
   const monitorLabel = document.querySelector<HTMLElement>('#monitor-label')!;
   const monitorHint = document.querySelector<HTMLElement>('#monitor-hint')!;
+  const fpsLabel = document.querySelector<HTMLElement>('#fps')!;
   const sourceLabel = document.querySelector<HTMLElement>('#source')!;
   const audio = new SystemAudioMonitor();
   const captureHelp = monitorHint.textContent!;
@@ -25,8 +26,9 @@ function start() {
 
   if (isWallpaper) document.body.dataset.mode = 'wallpaper';
 
-  const terrain = new Terrain(stage);
-  const history = new Float32Array(HISTORY_ROWS * BANDS);
+  const sampleRate = isWallpaper ? WALLPAPER_SAMPLE_RATE : SAMPLES_PER_SECOND;
+  const stepDuration = 1 / sampleRate;
+  const terrain = new Terrain(stage, sampleRate);
   const target = new Float32Array(BANDS);
   const smoothed = new Float32Array(BANDS);
   const systemBands = new Float32Array(WALLPAPER_BANDS);
@@ -41,15 +43,15 @@ function start() {
     age = 0;
     carry = 0;
     smoothed.fill(0);
-    history.fill(0);
+    const history = new Float32Array(HISTORY_ROWS * BANDS);
     if (mode === 'demo') {
       for (let row = 0; row < HISTORY_ROWS; row++) {
-        demoSpectrum(-row * STEP, target);
+        demoSpectrum(-row * stepDuration, target);
         history.set(target, row * BANDS);
       }
       smoothed.set(history.subarray(0, BANDS));
     }
-    terrain.updateHeights(history, head);
+    terrain.replaceHistory(history);
   }
 
   function step() {
@@ -71,8 +73,8 @@ function start() {
     }
 
     head = (head + HISTORY_ROWS - 1) % HISTORY_ROWS;
-    history.set(smoothed, head * BANDS);
-    age += STEP;
+    terrain.pushRow(head, smoothed);
+    age += stepDuration;
   }
 
   if (isWallpaper) {
@@ -138,19 +140,29 @@ function start() {
 
   resetHistory();
   let last = performance.now();
+  let fpsSince = last;
+  let renderedFrames = 0;
 
   function frame(now: number) {
     const delta = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
     carry += delta;
-    if (carry >= STEP) {
+    if (carry >= stepDuration) {
       do {
         step();
-        carry -= STEP;
-      } while (carry >= STEP);
-      terrain.updateHeights(history, head);
+        carry -= stepDuration;
+      } while (carry >= stepDuration);
     }
-    terrain.render(delta, carry / STEP);
+    terrain.render(delta, carry / stepDuration);
+    if (!isWallpaper) {
+      renderedFrames++;
+      const elapsed = now - fpsSince;
+      if (elapsed >= 1000) {
+        fpsLabel.textContent = `${Math.round(renderedFrames * 1000 / elapsed)} FPS`;
+        fpsSince = now;
+        renderedFrames = 0;
+      }
+    }
     requestAnimationFrame(frame);
   }
 
