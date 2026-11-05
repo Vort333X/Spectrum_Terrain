@@ -9,7 +9,11 @@ import { BANDS, HISTORY_ROWS } from './audio';
 const WIDTH = 14;
 const DEPTH = 7.8;
 const HEIGHT = 3.2;
-const ROW_STEP = DEPTH / (HISTORY_ROWS - 1);
+const ROW_SUBDIVISIONS = 2;
+const SURFACE_ROWS = (HISTORY_ROWS - 1) * ROW_SUBDIVISIONS + 1;
+const ROW_STEP = DEPTH / (SURFACE_ROWS - 1);
+const AUTO_ROTATE_SPEED = 1.5;
+const MAX_PIXEL_RATIO = 2;
 const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
 const START_POSITION = new Vector3(9.4, 7.5, 13.3);
@@ -127,19 +131,19 @@ function makeTrace() {
 }
 
 function makeSurface() {
-  const position = new Float32Array(HISTORY_ROWS * BANDS * 3);
-  const ages = new Float32Array(HISTORY_ROWS * BANDS);
-  const triangles = new Uint16Array((HISTORY_ROWS - 1) * (BANDS - 1) * 6);
+  const position = new Float32Array(SURFACE_ROWS * BANDS * 3);
+  const ages = new Float32Array(SURFACE_ROWS * BANDS);
+  const triangles = new Uint16Array((SURFACE_ROWS - 1) * (BANDS - 1) * 6);
   let triangleOffset = 0;
 
-  for (let row = 0; row < HISTORY_ROWS; row++) {
+  for (let row = 0; row < SURFACE_ROWS; row++) {
     for (let band = 0; band < BANDS; band++) {
       const index = row * BANDS + band;
       position[index * 3] = -SIDE + band * WIDTH / (BANDS - 1);
       position[index * 3 + 2] = FRONT - row * ROW_STEP;
-      ages[index] = row / (HISTORY_ROWS - 1);
+      ages[index] = row / (SURFACE_ROWS - 1);
 
-      if (row === HISTORY_ROWS - 1 || band === BANDS - 1) continue;
+      if (row === SURFACE_ROWS - 1 || band === BANDS - 1) continue;
       triangles.set([index, index + 1, index + BANDS, index + 1, index + BANDS + 1, index + BANDS], triangleOffset);
       triangleOffset += 6;
     }
@@ -216,7 +220,7 @@ export class Terrain {
     this.controls.maxDistance = 34;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.08;
     this.controls.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.controls.autoRotateSpeed = 0.48;
+    this.controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
     this.resetCamera();
 
     const grid = new GridHelper(WIDTH, 14, '#40334e', '#3b2d48');
@@ -270,12 +274,16 @@ export class Terrain {
 
   updateHeights(history: Float32Array, head: number) {
     const positions = this.geometry.getAttribute('position') as BufferAttribute;
-    for (let row = 0; row < HISTORY_ROWS; row++) {
-      const source = ((head + row) % HISTORY_ROWS) * BANDS;
+    for (let row = 0; row < SURFACE_ROWS; row++) {
+      const age = row / ROW_SUBDIVISIONS;
+      const sampleRow = Math.floor(age);
+      const newer = ((head + sampleRow) % HISTORY_ROWS) * BANDS;
+      const older = ((head + Math.min(sampleRow + 1, HISTORY_ROWS - 1)) % HISTORY_ROWS) * BANDS;
+      const blend = age - sampleRow;
       const destination = row * BANDS;
       for (let band = 0; band < BANDS; band++) {
-        const height = Math.max(0.002, history[source + band] * HEIGHT);
-        positions.setY(destination + band, height);
+        const level = history[newer + band] + (history[older + band] - history[newer + band]) * blend;
+        positions.setY(destination + band, Math.max(0.002, level * HEIGHT));
       }
     }
     const tracePositions = this.trace.geometry.getAttribute('position') as BufferAttribute;
@@ -299,9 +307,9 @@ export class Terrain {
   render(delta: number, phase: number) {
     // The r147 controls advance auto-rotation once per update.
     // Compensate for differing display refresh rates.
-    this.controls.autoRotateSpeed = 0.48 * delta * 60;
+    this.controls.autoRotateSpeed = AUTO_ROTATE_SPEED * delta * 60;
     this.controls.update();
-    this.surface.position.z = -phase * ROW_STEP;
+    this.surface.position.z = -phase * ROW_STEP * ROW_SUBDIVISIONS;
     this.renderer.render(this.scene, this.camera);
 
     for (const [label, world] of this.labels) {
@@ -317,7 +325,7 @@ export class Terrain {
     this.camera.fov = Math.min(68, 45 * Math.max(1, 1.22 / aspect));
     this.camera.updateProjectionMatrix();
     this.trace.material.uniforms.viewport.value.set(this.width, this.height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
     this.renderer.setSize(this.width, this.height);
   }
 }

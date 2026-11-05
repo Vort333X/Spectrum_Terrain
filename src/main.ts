@@ -8,6 +8,7 @@ declare global {
 }
 
 const STEP = 1 / SAMPLES_PER_SECOND;
+const WALLPAPER_BANDS = 64;
 
 function start() {
   const stage = document.querySelector<HTMLElement>('#stage')!;
@@ -28,7 +29,7 @@ function start() {
   const history = new Float32Array(HISTORY_ROWS * BANDS);
   const target = new Float32Array(BANDS);
   const smoothed = new Float32Array(BANDS);
-  const systemBands = new Float32Array(BANDS);
+  const systemBands = new Float32Array(WALLPAPER_BANDS);
   let mode: 'demo' | 'capture' | 'wallpaper' = isWallpaper ? 'wallpaper' : 'demo';
   let head = 0;
   let age = 0;
@@ -53,12 +54,19 @@ function start() {
 
   function step() {
     if (mode === 'demo') demoSpectrum(age, target);
-    if (mode === 'wallpaper') target.set(systemBands);
+    if (mode === 'wallpaper') {
+      for (let band = 0; band < BANDS; band++) {
+        const index = band * (WALLPAPER_BANDS - 1) / (BANDS - 1);
+        const lower = Math.floor(index);
+        const upper = Math.min(lower + 1, WALLPAPER_BANDS - 1);
+        target[band] = systemBands[lower] + (systemBands[upper] - systemBands[lower]) * (index - lower);
+      }
+    }
     if (mode === 'capture') audio.sample(target);
 
     for (let index = 0; index < BANDS; index++) {
       const value = target[index];
-      const response = value > smoothed[index] ? 0.78 : 0.35;
+      const response = value > smoothed[index] ? 0.90 : 0.50;
       smoothed[index] += (value - smoothed[index]) * response;
     }
 
@@ -69,10 +77,10 @@ function start() {
 
   if (isWallpaper) {
     window.wallpaperRegisterAudioListener!((levels) => {
-      if (levels.length !== BANDS * 2) return;
-      for (let index = 0; index < BANDS; index++) {
+      if (levels.length !== WALLPAPER_BANDS * 2) return;
+      for (let index = 0; index < WALLPAPER_BANDS; index++) {
         const left = Math.max(0, Number(levels[index]) || 0);
-        const right = Math.max(0, Number(levels[BANDS + index]) || 0);
+        const right = Math.max(0, Number(levels[WALLPAPER_BANDS + index]) || 0);
         systemBands[index] = Math.sqrt(Math.min(1, (left + right) * 0.5));
       }
     });

@@ -1,6 +1,6 @@
-export const BANDS = 64;
+export const BANDS = 128;
 export const SAMPLES_PER_SECOND = 30;
-export const HISTORY_ROWS = 120;
+export const HISTORY_ROWS = 76;
 
 const MIN_HZ = 30;
 const MAX_HZ = 16_000;
@@ -45,7 +45,7 @@ export class SystemAudioMonitor {
       context = new AudioContext();
       const analyser = context.createAnalyser();
       analyser.fftSize = FFT_SIZE;
-      analyser.smoothingTimeConstant = 0.38;
+      analyser.smoothingTimeConstant = 0.24;
       // The video track keeps the browser's share open. Only audio enters the analyser.
       const source = context.createMediaStreamSource(new MediaStream([track]));
       source.connect(analyser);
