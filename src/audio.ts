@@ -1,10 +1,11 @@
 export const BANDS = 128;
+export const WALLPAPER_BANDS = 64;
 export const SAMPLES_PER_SECOND = 60;
 export const HISTORY_SECONDS = 2.5;
 export const HISTORY_ROWS = SAMPLES_PER_SECOND * HISTORY_SECONDS + 2;
 
-const MIN_HZ = 30;
-const MAX_HZ = 16_000;
+export const MIN_HZ = 30;
+export const MAX_HZ = 16_000;
 const FFT_SIZE = 8192;
 const FLOOR_DB = -85;
 const CEILING_DB = -18;
@@ -55,7 +56,10 @@ export class SystemAudioMonitor {
       if (track.readyState !== 'live' || !stream.active) throw new Error('共享已结束，请重新开始监听。');
       const hzPerBin = context.sampleRate / FFT_SIZE;
       const topHz = Math.min(MAX_HZ, context.sampleRate / 2);
-      const bandBin = (edge: number) => MIN_HZ * (topHz / MIN_HZ) ** (edge / BANDS) / hzPerBin;
+      const bandBin = (edge: number) => {
+        const fraction = Math.min(1, Math.max(0, (edge - 0.5) / (BANDS - 1)));
+        return MIN_HZ * (topHz / MIN_HZ) ** fraction / hzPerBin;
+      };
       const ranges = Array.from({ length: BANDS }, (_, index) => {
         const start = Math.floor(bandBin(index));
         const end = Math.min(this.bins.length, Math.max(start + 1, Math.ceil(bandBin(index + 1))));
@@ -85,6 +89,10 @@ export class SystemAudioMonitor {
     capture.source.disconnect();
     for (const track of capture.stream.getTracks()) track.stop();
     void capture.context.close().catch(() => {});
+  }
+
+  get maxFrequency() {
+    return this.capture ? Math.min(MAX_HZ, this.capture.context.sampleRate / 2) : MAX_HZ;
   }
 
   sample(target: Float32Array) {
@@ -121,5 +129,25 @@ export function demoSpectrum(time: number, target: Float32Array) {
     const treble = trebleGain * Math.exp(-((x - trebleCenter) ** 2) / 0.009);
     const detail = 0.82 + 0.12 * Math.sin(x * 41 - time * 2.8) + 0.06 * Math.cos(x * 89 + time * 3.1);
     target[band] = Math.min(1, (bass + mids + treble) * detail);
+  }
+}
+
+export type TestSignal = 'demo' | 'sweep' | 'pulse';
+
+export function testSpectrum(signal: TestSignal, time: number, target: Float32Array) {
+  if (signal === 'demo') {
+    demoSpectrum(time, target);
+    return;
+  }
+
+  const cycle = (time % 3 + 3) % 3;
+  const sweep = 0.08 + 0.84 * cycle / 3;
+  const pulse = cycle % 0.75 < 0.14 ? 0.95 : 0.035;
+
+  for (let band = 0; band < target.length; band++) {
+    const x = band / (target.length - 1);
+    target[band] = signal === 'sweep'
+      ? 0.86 * Math.exp(-((x - sweep) ** 2) / 0.0015)
+      : pulse * (Math.exp(-((x - 0.29) ** 2) / 0.002) + 0.73 * Math.exp(-((x - 0.71) ** 2) / 0.003));
   }
 }

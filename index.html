@@ -45,17 +45,48 @@
       </div>
     </section>
 
+    <details class="controls effects">
+      <summary>效果调试</summary>
+      <div class="effects-body">
+        <label class="test-source" for="test-signal">测试信号
+          <select id="test-signal">
+            <option value="demo">演示</option>
+            <option value="sweep">对数扫频</option>
+            <option value="pulse">双频脉冲</option>
+          </select>
+        </label>
+        <form id="effects">
+          <label class="effect-check"><input type="checkbox" name="axes" data-effect checked> 显示坐标轴</label>
+          <label class="effect-range">曲面不透明度 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="opacity" data-effect data-unit="%" min="0" max="100" value="78">
+          </label>
+          <label class="effect-range">后方保留亮度 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="trail" data-effect data-unit="%" min="0" max="100" value="18">
+          </label>
+          <label class="effect-range">光晕强度 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="glow" data-effect data-unit="%" min="0" max="100" value="55">
+          </label>
+          <label class="effect-range">光晕半径 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="radius" data-effect data-unit=" px" min="2" max="20" value="8">
+          </label>
+          <label class="effect-range">强度增益 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="gain" data-effect data-unit="%" min="25" max="300" step="5" value="100">
+          </label>
+          <label class="effect-range">绕转速度 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="orbitspeed" data-effect data-unit=" °/s" min="0" max="30" value="9">
+          </label>
+          <label class="effect-check"><input type="checkbox" id="freeze"> 冻结频谱</label>
+          <button type="reset" id="reset-effects">恢复默认效果</button>
+        </form>
+      </div>
+    </details>
+
     <footer class="panel-foot">128 显示列 <span>·</span> 2.5 秒历史</footer>
   </aside>
 
   <main id="stage" aria-label="实时三维频谱瀑布图">
     <div class="stage-header" aria-hidden="true"><span>实时频谱</span><span class="stage-index">SPECTRAL HISTORY</span><span id="fps">— FPS</span></div>
-    <div id="axes" aria-hidden="true">
-      <span data-axis="low">低频</span>
-      <span data-axis="high">高频</span>
-      <span data-axis="now">当前</span>
-      <span data-axis="past">−2.5 秒</span>
-    </div>
+    <div id="axes" aria-hidden="true"></div>
     <p class="hint">拖动旋转 <span>·</span> 滚轮缩放</p>
     <p id="stage-error" role="alert" hidden>无法初始化三维场景。请检查浏览器的图形加速设置。</p>
   </main>

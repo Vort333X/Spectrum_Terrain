@@ -1,17 +1,18 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Camera, Color, DataTexture, DoubleSide, GridHelper,
-  LineBasicMaterial, LineSegments, Mesh, PerspectiveCamera, Scene,
+  AdditiveBlending, BufferAttribute, BufferGeometry, Color, CustomBlending, DataTexture, DoubleSide,
+  Mesh, OneMinusSrcAlphaFactor, PerspectiveCamera, Scene, SrcAlphaFactor,
   ShaderMaterial, Vector2, Vector3, WebGLRenderer,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audio';
+import { Axes } from './axes';
+import type { EffectSettings } from './effects';
 
 const WIDTH = 14;
 const DEPTH = 7.8;
 const HEIGHT = 3.2;
 const SURFACE_ROWS = HISTORY_SECONDS * SAMPLES_PER_SECOND + 1;
 const ROW_STEP = DEPTH / (SURFACE_ROWS - 1);
-const AUTO_ROTATE_SPEED = 1.5;
 const MAX_PIXEL_RATIO = 2;
 const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
@@ -32,6 +33,7 @@ const sampleHeight = `
   uniform float historyHead;
   uniform float historySpan;
   uniform float historyPhase;
+  uniform float levelGain;
 
   float levelAt(float band, float row) {
     const float columns = ${BANDS.toFixed(1)};
@@ -46,7 +48,7 @@ const sampleHeight = `
     float row = age * historySpan + (1.0 - historyPhase);
     float newer = floor(row);
     float level = mix(levelAt(band, newer), levelAt(band, newer + 1.0), fract(row));
-    return max(0.002, level * ${HEIGHT.toFixed(1)});
+    return max(0.002, min(level * levelGain, 1.0) * ${HEIGHT.toFixed(1)});
   }
 `;
 
@@ -72,6 +74,8 @@ const fragmentShader = `
   uniform vec3 lowColor;
   uniform vec3 midColor;
   uniform vec3 highColor;
+  uniform float surfaceOpacity;
+  uniform float trailOpacity;
   varying float vAge;
   varying float vHeight;
   varying vec3 vPosition;
@@ -83,17 +87,19 @@ const fragmentShader = `
     vec3 normal = normalize(cross(dFdx(vPosition), dFdy(vPosition)));
     if (!gl_FrontFacing) normal = -normal;
     float light = 0.72 + 0.35 * max(dot(normal, normalize(vec3(-0.65, 1.0, 0.8))), 0.0);
-    float ageFade = mix(1.0, 0.34, smoothstep(0.04, 1.0, vAge));
-    float contour = pow(0.5 + 0.5 * cos(vAge * 188.5), 18.0);
-    vec3 phosphor = mix(midColor, highColor, 0.44);
-    color = mix(color * light, phosphor, contour * (0.19 + 0.30 * level));
-    float opacity = ageFade * (0.15 + 0.40 * level + 0.17 * contour);
+    float ageFade = mix(1.0, trailOpacity, smoothstep(0.0, 1.0, vAge));
+    float stripe = vAge * 188.5;
+    float resolved = 1.0 - smoothstep(0.28, 1.0, fwidth(stripe));
+    float contour = pow(0.5 + 0.5 * cos(stripe), 14.0) * resolved;
+    color = mix(color * light, midColor, contour * 0.20 * (1.0 - vAge));
+    float opacity = surfaceOpacity * ageFade * (0.24 + 0.62 * level + 0.12 * contour);
     gl_FragColor = vec4(color, opacity);
   }
 `;
 
 const traceVertexShader = `
   uniform vec2 viewport;
+  uniform float glowRadius;
   attribute float band;
   attribute float side;
   varying float vSide;
@@ -115,7 +121,7 @@ const traceVertexShader = `
     vec4 next = projectPoint(min(maxBand, band + 1.0), min(halfWidth, position.x + bandStep));
     vec2 tangent = (next.xy / next.w - prev.xy / prev.w) * viewport;
     vec2 normal = vec2(-tangent.y, tangent.x) / max(length(tangent), 0.001);
-    center.xy += normal * side * 22.0 / viewport * center.w;
+    center.xy += normal * side * (2.0 * glowRadius) / viewport * center.w;
     vSide = side;
     vLevel = heightAt(band, 0.0) / ${HEIGHT.toFixed(1)};
     gl_Position = center;
@@ -124,13 +130,15 @@ const traceVertexShader = `
 
 const traceFragmentShader = `
   uniform vec3 glowColor;
+  uniform float glowRadius;
+  uniform float glowStrength;
   varying float vSide;
   varying float vLevel;
 
   void main() {
     float distanceSquared = vSide * vSide;
-    float core = exp(-distanceSquared * 165.0);
-    float halo = 0.45 * exp(-distanceSquared * 16.0) + 0.12 * exp(-distanceSquared * 4.0);
+    float core = exp(-distanceSquared * glowRadius * glowRadius * 1.45);
+    float halo = glowStrength * (0.56 * exp(-distanceSquared * 12.0) + 0.18 * exp(-distanceSquared * 3.5));
     float edge = 1.0 - smoothstep(0.65, 1.0, abs(vSide));
     float intensity = mix(0.34, 1.0, smoothstep(0.0, 0.44, vLevel));
     vec3 color = mix(glowColor, vec3(0.94, 1.0, 0.98), core * 0.48);
@@ -167,7 +175,7 @@ function makeSurface() {
   const ages = new Float32Array(SURFACE_ROWS * BANDS);
   const bands = new Float32Array(SURFACE_ROWS * BANDS);
   const triangles = new Uint16Array((SURFACE_ROWS - 1) * (BANDS - 1) * 6);
-  let triangleOffset = 0;
+  let triangleOffset = triangles.length;
 
   for (let row = 0; row < SURFACE_ROWS; row++) {
     for (let band = 0; band < BANDS; band++) {
@@ -178,8 +186,8 @@ function makeSurface() {
       bands[index] = band;
 
       if (row === SURFACE_ROWS - 1 || band === BANDS - 1) continue;
+      triangleOffset -= 6;
       triangles.set([index, index + 1, index + BANDS, index + 1, index + BANDS + 1, index + BANDS], triangleOffset);
-      triangleOffset += 6;
     }
   }
 
@@ -189,25 +197,6 @@ function makeSurface() {
     .setAttribute('band', new BufferAttribute(bands, 1))
     .setIndex(new BufferAttribute(triangles, 1));
 }
-
-function makeFrame() {
-  const points = [
-    -SIDE, 0, FRONT, SIDE, 0, FRONT,
-    SIDE, 0, FRONT, SIDE, 0, -FRONT,
-    SIDE, 0, -FRONT, -SIDE, 0, -FRONT,
-    -SIDE, 0, -FRONT, -SIDE, 0, FRONT,
-  ];
-  return new LineSegments(
-    new BufferGeometry().setAttribute('position', new BufferAttribute(new Float32Array(points), 3)),
-    new LineBasicMaterial({ color: '#51545b', transparent: true, opacity: 0.66 }),
-  );
-}
-
-function projectLabel(camera: Camera, world: Vector3, point: Vector3, label: HTMLElement, width: number, height: number) {
-  point.copy(world).project(camera);
-  label.style.transform = `translate(${Math.round((point.x + 1) * width / 2)}px, ${Math.round((1 - point.y) * height / 2)}px) translate(-50%, -50%)`;
-}
-
 
 function packLevels(destination: Uint8Array, offset: number, levels: Float32Array) {
   for (let index = 0; index < levels.length; index++) {
@@ -233,6 +222,7 @@ export class Terrain {
     historyHead: { value: 0 },
     historySpan: { value: 0 },
     historyPhase: { value: 0 },
+    levelGain: { value: 1 },
   };
   private geometry = makeSurface();
   private material = new ShaderMaterial({
@@ -241,12 +231,16 @@ export class Terrain {
       lowColor: { value: new Color() },
       midColor: { value: new Color() },
       highColor: { value: new Color() },
+      surfaceOpacity: { value: 0 },
+      trailOpacity: { value: 0 },
     },
     vertexShader,
     fragmentShader,
     extensions: { derivatives: true },
-    // Additive light is order independent, so this double-sided surface can draw once.
-    blending: AdditiveBlending,
+    // Draw both sides once and blend older rows without adding their light together.
+    blending: CustomBlending,
+    blendSrc: SrcAlphaFactor,
+    blendDst: OneMinusSrcAlphaFactor,
     depthWrite: false,
     side: DoubleSide,
   });
@@ -255,6 +249,8 @@ export class Terrain {
     uniforms: {
       ...this.heightUniforms,
       glowColor: { value: new Color() },
+      glowRadius: { value: 8 },
+      glowStrength: { value: 0 },
       viewport: { value: new Vector2(1, 1) },
     },
     vertexShader: traceVertexShader,
@@ -265,10 +261,10 @@ export class Terrain {
   }));
   private width = 1;
   private height = 1;
-  private projected = new Vector3();
-  private labels: [HTMLElement, Vector3][];
+  private axes: Axes;
+  private orbitSpeed = 9;
 
-  constructor(stage: HTMLElement, sampleRate: number) {
+  constructor(stage: HTMLElement, sampleRate: number, wallpaper: boolean) {
     this.heightUniforms.historySpan.value = HISTORY_SECONDS * sampleRate;
     this.renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -280,29 +276,16 @@ export class Terrain {
     this.controls.maxDistance = 34;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.08;
     this.controls.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
+
     this.resetCamera();
 
-    const grid = new GridHelper(WIDTH, 14, '#353940', '#292d34');
-    grid.position.y = -0.04;
-    grid.scale.z = DEPTH / WIDTH;
-    const gridMaterial = grid.material as LineBasicMaterial;
-    gridMaterial.transparent = true;
-    gridMaterial.opacity = 0.46;
+    this.axes = new Axes(stage.querySelector('#axes')!, { width: WIDTH, depth: DEPTH, height: HEIGHT }, wallpaper);
+    this.controls.addEventListener('change', () => this.axes.invalidate());
     this.surface.frustumCulled = false;
-
     this.trace.frustumCulled = false;
     this.trace.renderOrder = 2;
     this.surface.add(this.trace);
-    this.scene.add(grid, makeFrame(), this.surface);
-
-    this.labels = [
-      [stage.querySelector('[data-axis="low"]')!, new Vector3(-SIDE - 0.25, 0, FRONT + 0.55)],
-      [stage.querySelector('[data-axis="high"]')!, new Vector3(SIDE + 0.28, 0, FRONT + 0.55)],
-      [stage.querySelector('[data-axis="now"]')!, new Vector3(SIDE + 0.62, 0, FRONT - 0.9)],
-      [stage.querySelector('[data-axis="past"]')!, new Vector3(SIDE + 0.62, 0, -FRONT)],
-    ];
-
+    this.scene.add(this.axes.group, this.surface);
     this.setPalette('jade');
     const resize = () => this.resize(stage.clientWidth, stage.clientHeight);
     new ResizeObserver(resize).observe(stage);
@@ -315,6 +298,20 @@ export class Terrain {
     this.material.uniforms.midColor.value.set(mid);
     this.material.uniforms.highColor.value.set(high);
     this.trace.material.uniforms.glowColor.value.set(high);
+  }
+
+  applyEffects(settings: EffectSettings) {
+    this.axes.visible = settings.axes;
+    this.material.uniforms.surfaceOpacity.value = settings.opacity / 100;
+    this.material.uniforms.trailOpacity.value = settings.trail / 100;
+    this.trace.material.uniforms.glowStrength.value = settings.glow / 100;
+    this.trace.material.uniforms.glowRadius.value = settings.radius;
+    this.heightUniforms.levelGain.value = settings.gain / 100;
+    this.orbitSpeed = settings.orbitspeed;
+  }
+
+  setMaxFrequency(maxHz: number) {
+    this.axes.setMaxFrequency(maxHz);
   }
 
   get autoRotate() {
@@ -351,14 +348,12 @@ export class Terrain {
   render(delta: number, phase: number) {
     // The r147 controls advance auto-rotation once per update.
     // Compensate for differing display refresh rates.
-    this.controls.autoRotateSpeed = AUTO_ROTATE_SPEED * delta * 60;
+    this.controls.autoRotateSpeed = this.orbitSpeed / 6 * delta * 60;
     this.controls.update();
     this.heightUniforms.historyPhase.value = phase;
     this.renderer.render(this.scene, this.camera);
 
-    for (const [label, world] of this.labels) {
-      projectLabel(this.camera, world, this.projected, label, this.width, this.height);
-    }
+    this.axes.layout(this.camera, this.width, this.height);
   }
 
   private resize(width: number, height: number) {
@@ -371,5 +366,6 @@ export class Terrain {
     this.trace.material.uniforms.viewport.value.set(this.width, this.height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
     this.renderer.setSize(this.width, this.height);
+    this.axes.invalidate();
   }
 }

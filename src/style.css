@@ -20,6 +20,8 @@ body {
   flex-direction: column;
   gap: 25px;
   min-height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
   padding: 29px 24px 23px;
   background: #000;
   border-right: 1px solid #2a2333;
@@ -166,7 +168,7 @@ button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; 
   font-size: 11px;
 }
 #axes { position: absolute; inset: 0; }
-#axes span {
+#axes .axis-tick {
   position: absolute;
   color: #b9a8c6;
   font-size: 11px;
@@ -187,12 +189,54 @@ body[data-mode="wallpaper"] .panel,
 body[data-mode="wallpaper"] .hint,
 body[data-mode="wallpaper"] .stage-header { display: none; }
 
+.effects summary {
+  color: #e2d9ed;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.effects-body, #effects { display: grid; gap: 12px; }
+.effects-body { margin-top: 14px; }
+.effect-check, .test-source, .effect-range {
+  color: #c4b8cf;
+  font-size: 11px;
+}
+.effect-check, .test-source { display: flex; align-items: center; gap: 6px; }
+.test-source { justify-content: space-between; }
+.test-source select {
+  padding: 4px 7px;
+  border: 1px solid #3a3046;
+  border-radius: 4px;
+  background: #1b1624;
+  color: #ede9f3;
+  font: inherit;
+}
+.effect-range { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
+.effect-value {
+  color: #f4a58e;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.effect-range input { grid-column: 1 / -1; width: 100%; margin: 0; }
+#effects input { accent-color: #f4a58e; }
+#reset-effects { width: 100%; }
+
+.axis-legend {
+  position: absolute;
+  right: 26px;
+  bottom: 24px;
+  color: #a6a2ad;
+  font-size: 10px;
+  text-align: right;
+}
+
 @media (max-width: 700px) {
   body { grid-template-columns: 1fr; }
   #stage { grid-row: 1; min-height: 52vh; }
-  .panel { min-height: 0; padding: 20px; gap: 15px; border: 0; border-top: 1px solid #2a2333; }
+  .panel { min-height: 0; max-height: none; padding: 20px; gap: 15px; border: 0; border-top: 1px solid #2a2333; }
   .brand h1 { font-size: 26px; }
   .brand h1 br, .brand .mark, .stage-index { display: none; }
   .stage-header, .hint { left: 15px; }
+  .axis-legend { bottom: 41px; right: 15px; }
   body[data-mode="wallpaper"] #stage { min-height: 100vh; }
 }
