@@ -1,0 +1,89 @@
+#vinyl-page-container .spectrum-terrain-layout > .side:first-child {
+  flex: 0 0 24px;
+  min-width: 0;
+}
+
+#vinyl-page-container .spectrum-terrain-layout > .vinyl {
+  flex: 1 1 0;
+  min-width: 0;
+  height: max(260px, calc(100% - 190px)) !important;
+}
+
+#vinyl-page-container .spectrum-terrain-layout > .center {
+  flex: 0 0 18px;
+  min-width: 0;
+}
+
+#vinyl-page-container .spectrum-terrain-stage[data-ready] ~ .cover-area,
+#vinyl-page-container .spectrum-terrain-stage[data-ready] ~ .cover-area * {
+  visibility: hidden !important;
+  pointer-events: none;
+}
+
+.spectrum-terrain-stage {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 10px;
+  color: #e9e9ee;
+  background: #000;
+}
+
+.spectrum-terrain-stage:not([data-ready]) {
+  visibility: hidden;
+}
+
+.spectrum-terrain-stage canvas {
+  display: block;
+}
+
+.spectrum-terrain-stage [data-spectrum-axes] {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font: 11px/1.2 system-ui, sans-serif;
+}
+
+.spectrum-terrain-stage .axis-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #c8c3ce;
+  white-space: nowrap;
+}
+
+.spectrum-terrain-stage .axis-legend {
+  display: none;
+}
+
+.spectrum-terrain-tools {
+  position: absolute;
+  inset: 10px 10px auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  pointer-events: none;
+  font: 12px/1.4 system-ui, sans-serif;
+}
+
+.spectrum-terrain-tools > button,
+.spectrum-terrain-tools > span {
+  border: 1px solid #ffffff30;
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--spectrum-accent, #e9e9ee);
+  background: var(--spectrum-wash, #14141a);
+}
+
+.spectrum-terrain-tools > button {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.spectrum-terrain-tools > button:disabled {
+  opacity: 0.65;
+  cursor: default;
+}

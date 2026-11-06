@@ -1,7 +1,7 @@
 import {
   AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, CustomBlending,
   DataTexture, DoubleSide, MathUtils, Mesh, MeshBasicMaterial, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry,
-  Scene, SrcAlphaFactor, ShaderMaterial, Vector2, Vector3, WebGLRenderer, type ColorRepresentation,
+  LineSegments, Scene, SrcAlphaFactor, ShaderMaterial, Vector2, Vector3, WebGLRenderer, type ColorRepresentation,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audio';
@@ -297,6 +297,7 @@ function packCurve(destination: Uint8Array, offset: number, levels: Float32Array
 
 export class Terrain {
   private renderer: WebGLRenderer;
+  private resizeObserver: ResizeObserver;
   private camera = new PerspectiveCamera(45, 1, 0.1, 80);
   private scene = new Scene();
   private controls: OrbitControls;
@@ -387,7 +388,7 @@ export class Terrain {
 
     this.resetCamera();
 
-    this.axes = new Axes(stage.querySelector('#axes')!, { width: WIDTH, depth: DEPTH, height: HEIGHT }, wallpaper);
+    this.axes = new Axes(stage.querySelector('[data-spectrum-axes], #axes')!, { width: WIDTH, depth: DEPTH, height: HEIGHT }, wallpaper);
     this.controls.addEventListener('change', () => {
       this.axes.invalidate();
       if (this.framingCamera) this.framingDirty = true;
@@ -399,8 +400,26 @@ export class Terrain {
     this.scene.add(this.axes.group, this.surface);
     this.setPalette(DEFAULT_PALETTE);
     const resize = () => this.resize(stage.clientWidth, stage.clientHeight);
-    new ResizeObserver(resize).observe(stage);
+    this.resizeObserver = new ResizeObserver(resize);
+    this.resizeObserver.observe(stage);
     resize();
+  }
+
+  dispose() {
+    this.resizeObserver.disconnect();
+    this.controls.dispose();
+    this.coverMaterial?.map?.dispose();
+    this.heightMap.dispose();
+    this.rowTexture.dispose();
+    this.scene.traverse((object) => {
+      if (!(object instanceof Mesh || object instanceof LineSegments)) return;
+      object.geometry.dispose();
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      materials.forEach((material) => material.dispose());
+    });
+    this.renderer.dispose();
+    this.renderer.forceContextLoss();
+    this.renderer.domElement.remove();
   }
 
   setPalette(name: Palette) {
