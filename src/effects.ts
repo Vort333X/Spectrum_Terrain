@@ -5,6 +5,7 @@ export interface EffectSettings {
   glow: number;
   radius: number;
   gain: number;
+  smoothing: number;
   orbitspeed: number;
 }
 

@@ -72,6 +72,9 @@
           <label class="effect-range">强度增益 <span class="effect-value" aria-hidden="true"></span>
             <input type="range" name="gain" data-effect data-unit="%" min="25" max="300" step="5" value="100">
           </label>
+          <label class="effect-range">频率平滑 <span class="effect-value" aria-hidden="true"></span>
+            <input type="range" name="smoothing" data-effect data-unit="%" min="0" max="80" value="50">
+          </label>
           <label class="effect-range">绕转速度 <span class="effect-value" aria-hidden="true"></span>
             <input type="range" name="orbitspeed" data-effect data-unit=" °/s" min="0" max="30" value="9">
           </label>
@@ -81,7 +84,7 @@
       </div>
     </details>
 
-    <footer class="panel-foot">128 显示列 <span>·</span> 2.5 秒历史</footer>
+    <footer class="panel-foot">255 曲面列 <span>·</span> 2.5 秒历史</footer>
   </aside>
 
   <main id="stage" aria-label="实时三维频谱瀑布图">
