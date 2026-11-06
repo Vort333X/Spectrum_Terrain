@@ -1,5 +1,6 @@
 import { BANDS, HISTORY_ROWS, SAMPLES_PER_SECOND, SystemAudioMonitor, testSpectrum, WALLPAPER_BANDS, type TestSignal } from './audio';
-import { Terrain, type Palette } from './terrain';
+import { Terrain } from './terrain';
+import { DEFAULT_PALETTE, isPalette, PALETTES, type Palette } from './palettes';
 import { bindEffects } from './effects';
 
 declare global {
@@ -27,7 +28,6 @@ function start() {
   const captureHelp = monitorHint.textContent!;
   const orbit = document.querySelector<HTMLButtonElement>('#orbit')!;
   const reset = document.querySelector<HTMLButtonElement>('#reset')!;
-  const swatches = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-palette]'));
   const isWallpaper = typeof window.wallpaperRegisterAudioListener === 'function';
 
   if (isWallpaper) document.body.dataset.mode = 'wallpaper';
@@ -91,7 +91,7 @@ function start() {
       applyUserProperties(properties) {
         setEffects(Object.fromEntries(Object.entries(properties).map(([key, property]) => [key, property.value])));
         const palette = properties.palette?.value;
-        if (palette === 'ember' || palette === 'jade' || palette === 'silver') terrain.setPalette(palette);
+        if (isPalette(palette)) terrain.setPalette(palette);
       },
     };
     window.wallpaperRegisterAudioListener!((levels) => {
@@ -154,13 +154,28 @@ function start() {
     orbit.setAttribute('aria-pressed', String(terrain.autoRotate));
   });
   reset.addEventListener('click', () => terrain.resetCamera());
-  for (const swatch of swatches) {
-    swatch.addEventListener('click', () => {
-      terrain.setPalette(swatch.dataset.palette as Palette);
-      for (const button of swatches) {
-        button.setAttribute('aria-pressed', String(button === swatch));
-      }
-    });
+  if (!isWallpaper) {
+    const swatches = document.querySelector<HTMLElement>('.swatches')!;
+    let selected: HTMLButtonElement | undefined;
+
+    for (const name of Object.keys(PALETTES) as Palette[]) {
+      const { label, colors } = PALETTES[name];
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'swatch';
+      swatch.dataset.palette = name;
+      swatch.textContent = label;
+      swatch.style.setProperty('--gradient', `linear-gradient(110deg, ${colors.join(', ')})`);
+      swatch.setAttribute('aria-pressed', String(name === DEFAULT_PALETTE));
+      if (name === DEFAULT_PALETTE) selected = swatch;
+      swatch.addEventListener('click', () => {
+        terrain.setPalette(name);
+        selected?.setAttribute('aria-pressed', 'false');
+        swatch.setAttribute('aria-pressed', 'true');
+        selected = swatch;
+      });
+      swatches.append(swatch);
+    }
   }
 
   resetHistory();

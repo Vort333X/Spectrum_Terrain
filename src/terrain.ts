@@ -7,6 +7,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audio';
 import { Axes } from './axes';
 import type { EffectSettings } from './effects';
+import { DEFAULT_PALETTE, PALETTES, type Palette } from './palettes';
 
 const WIDTH = 14;
 const DEPTH = 7.8;
@@ -20,15 +21,6 @@ const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
 const START_POSITION = new Vector3(9.4, 7.5, 13.3);
 const LOOK_AT = new Vector3(0, 0.87, 0);
-
-const palettes = {
-  ember: ['#331655', '#a53680', '#ffb484'],
-  jade: ['#103e36', '#40cd98', '#cbffd7'],
-  silver: ['#2c2b40', '#7b7e92', '#f8edf5'],
-} as const;
-
-export type Palette = keyof typeof palettes;
-
 
 const sampleHeight = `
 uniform sampler2D heightMap;
@@ -330,14 +322,14 @@ export class Terrain {
     this.trace.renderOrder = 2;
     this.surface.add(this.trace);
     this.scene.add(this.axes.group, this.surface);
-    this.setPalette('jade');
+    this.setPalette(DEFAULT_PALETTE);
     const resize = () => this.resize(stage.clientWidth, stage.clientHeight);
     new ResizeObserver(resize).observe(stage);
     resize();
   }
 
   setPalette(name: Palette) {
-    const [low, mid, high] = palettes[name];
+    const [low, mid, high] = PALETTES[name].colors;
     this.material.uniforms.lowColor.value.set(low);
     this.material.uniforms.midColor.value.set(mid);
     this.material.uniforms.highColor.value.set(high);

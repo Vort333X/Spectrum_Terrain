@@ -122,14 +122,34 @@ button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; 
   font-size: 11px;
   line-height: 1.45;
 }
-.row, .swatches { display: flex; gap: 8px; }
+.row { display: flex; gap: 8px; }
 .row button { flex: 1; }
 
-.swatch { width: 48px; min-height: 27px; }
-.swatch[aria-pressed="true"] { border-color: #fff1eb; }
-.ember { background-image: linear-gradient(110deg, #2e1457, #a0347f, #fcb38b); }
-.jade { background-image: linear-gradient(110deg, #073026, #287957, #c7ff9a); }
-.silver { background-image: linear-gradient(110deg, #23253a, #727484, #efecf2); }
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  max-width: 300px;
+}
+.swatch {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 4px 5px;
+  background-color: #15111c;
+  color: #d7cedf;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.swatch::before {
+  content: "";
+  width: 100%;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--gradient);
+}
+.swatch[aria-pressed="true"] { border-color: #fff1eb; color: #fff; }
 
 .panel-foot {
   margin-top: auto;
