@@ -1,7 +1,8 @@
-import { BANDS, HISTORY_ROWS, SAMPLES_PER_SECOND, SystemAudioMonitor, testSpectrum, WALLPAPER_BANDS, type TestSignal } from './audio';
+import { BANDS, SAMPLES_PER_SECOND, SystemAudioMonitor, testSpectrum, WALLPAPER_BANDS, type TestSignal } from './audio';
 import { Terrain } from './terrain';
 import { DEFAULT_PALETTE, isPalette, PALETTES, type Palette } from './palettes';
 import { bindEffects } from './effects';
+import { SpectrumHistory } from './spectrum-history';
 
 declare global {
   interface Window {
@@ -33,37 +34,19 @@ function start() {
   if (isWallpaper) document.body.dataset.mode = 'wallpaper';
 
   const sampleRate = isWallpaper ? WALLPAPER_SAMPLE_RATE : SAMPLES_PER_SECOND;
-  const stepDuration = 1 / sampleRate;
   const terrain = new Terrain(stage, sampleRate, isWallpaper);
+  const history = new SpectrumHistory(terrain, sampleRate);
   const setEffects = bindEffects(effects, (settings) => terrain.applyEffects(settings), !isWallpaper);
-  const target = new Float32Array(BANDS);
-  const smoothed = new Float32Array(BANDS);
   const systemBands = new Float32Array(WALLPAPER_BANDS);
   let mode: 'demo' | 'capture' | 'wallpaper' = isWallpaper ? 'wallpaper' : 'demo';
-  let head = 0;
-  let age = 0;
-  let carry = 0;
   let signal: TestSignal = 'demo';
 
-
   function resetHistory() {
-    head = 0;
-    age = 0;
-    carry = 0;
     freeze.checked = false;
-    smoothed.fill(0);
-    const history = new Float32Array(HISTORY_ROWS * BANDS);
-    if (mode === 'demo') {
-      for (let row = 0; row < HISTORY_ROWS; row++) {
-        testSpectrum(signal, -row * stepDuration, target);
-        history.set(target, row * BANDS);
-      }
-      smoothed.set(history.subarray(0, BANDS));
-    }
-    terrain.replaceHistory(history);
+    history.reset(mode === 'demo' ? sample : undefined);
   }
 
-  function step() {
+  function sample(age: number, target: Float32Array) {
     if (mode === 'demo') testSpectrum(signal, age, target);
     if (mode === 'wallpaper') {
       for (let band = 0; band < BANDS; band++) {
@@ -74,16 +57,6 @@ function start() {
       }
     }
     if (mode === 'capture') audio.sample(target);
-
-    for (let index = 0; index < BANDS; index++) {
-      const value = target[index];
-      const response = value > smoothed[index] ? 0.90 : 0.50;
-      smoothed[index] += (value - smoothed[index]) * response;
-    }
-
-    head = (head + HISTORY_ROWS - 1) % HISTORY_ROWS;
-    terrain.pushRow(head, smoothed);
-    age += stepDuration;
   }
 
   if (isWallpaper) {
@@ -186,14 +159,8 @@ function start() {
   function frame(now: number) {
     const delta = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
-    if (!freeze.checked) carry += delta;
-    if (carry >= stepDuration) {
-      do {
-        step();
-        carry -= stepDuration;
-      } while (carry >= stepDuration);
-    }
-    terrain.render(delta, carry / stepDuration);
+    if (!freeze.checked) history.advance(delta, sample);
+    terrain.render(delta, history.phase);
     if (!isWallpaper) {
       renderedFrames++;
       const elapsed = now - fpsSince;

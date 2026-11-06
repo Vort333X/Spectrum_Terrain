@@ -1,7 +1,7 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Color, CustomBlending, DataTexture, DoubleSide,
-  Mesh, OneMinusSrcAlphaFactor, PerspectiveCamera, Scene, SrcAlphaFactor,
-  ShaderMaterial, Vector2, Vector3, WebGLRenderer,
+  AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, CustomBlending,
+  DataTexture, DoubleSide, MathUtils, Mesh, MeshBasicMaterial, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry,
+  Scene, SrcAlphaFactor, ShaderMaterial, Vector2, Vector3, WebGLRenderer, type ColorRepresentation,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audio';
@@ -21,6 +21,60 @@ const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
 const START_POSITION = new Vector3(9.4, 7.5, 13.3);
 const LOOK_AT = new Vector3(0, 0.87, 0);
+const PLAYER_POSITION = new Vector3(17.0, 7.7, 16.0);
+const PLAYER_LOOK_AT = new Vector3(-0.5, 2.75, 0);
+const PLAYER_DISTANCE = PLAYER_POSITION.distanceTo(PLAYER_LOOK_AT);
+const PLAYER_BOUNDS = [
+  ...[-SIDE, SIDE].flatMap((x) => [-FRONT, FRONT].flatMap((z) => [
+    new Vector3(x, 0, z),
+    new Vector3(x, HEIGHT, z),
+  ])),
+  new Vector3(-SIDE, DEPTH, -FRONT),
+  new Vector3(-SIDE, DEPTH, FRONT),
+];
+
+function fitPlayerCamera(camera: PerspectiveCamera, reference: PerspectiveCamera, target: Vector3, width: number, height: number) {
+  // Fit the current orbit at its default distance, leaving the user's wheel zoom intact.
+  reference.position.copy(camera.position).sub(target).setLength(PLAYER_DISTANCE).add(target);
+  reference.aspect = width / height;
+  reference.lookAt(target);
+  reference.updateProjectionMatrix();
+  reference.updateMatrixWorld();
+
+  const projected = new Vector3();
+  let left = Infinity;
+  let right = -Infinity;
+  let top = -Infinity;
+  let bottom = Infinity;
+  for (const point of PLAYER_BOUNDS) {
+    projected.copy(point).project(reference);
+    left = Math.min(left, projected.x);
+    right = Math.max(right, projected.x);
+    top = Math.max(top, projected.y);
+    bottom = Math.min(bottom, projected.y);
+  }
+  const horizontalPadding = Math.min(46, width * 0.04);
+  const topPadding = height * 0.045;
+  const bottomPadding = Math.min(42, height * 0.16);
+  const scale = Math.min(
+    2 * (width - 2 * horizontalPadding) / ((right - left) * width),
+    2 * (height - topPadding - bottomPadding) / ((top - bottom) * height),
+  );
+
+  camera.fov = MathUtils.radToDeg(2 * Math.atan(Math.tan(MathUtils.degToRad(reference.fov) / 2) / scale));
+  const offsetX = (1 + left * scale) * width / 2 - horizontalPadding;
+  const offsetY = (1 - (top + bottom) * scale / 2) * height / 2 - (topPadding + height - bottomPadding) / 2;
+  camera.setViewOffset(width, height, offsetX, offsetY, width, height);
+}
+
+type SpectrumColors = readonly [ColorRepresentation, ColorRepresentation, ColorRepresentation];
+
+interface PaletteTransition {
+  from: Color[];
+  to: Color[];
+  duration: number;
+  elapsed: number;
+}
 
 const sampleHeight = `
 uniform sampler2D heightMap;
@@ -299,8 +353,17 @@ export class Terrain {
   private height = 1;
   private axes: Axes;
   private orbitSpeed = 9;
+  private coverMaterial?: MeshBasicMaterial;
+  private framingCamera?: PerspectiveCamera;
+  private framingDirty = false;
+  private paletteTransition?: PaletteTransition;
+  private readonly colors: readonly [Color, Color, Color] = [
+    this.material.uniforms.lowColor.value,
+    this.material.uniforms.midColor.value,
+    this.material.uniforms.highColor.value,
+  ];
 
-  constructor(stage: HTMLElement, sampleRate: number, wallpaper: boolean) {
+  constructor(stage: HTMLElement, sampleRate: number, wallpaper: boolean, private readonly view: 'terrain' | 'player' = 'terrain') {
     this.heightUniforms.historySpan.value = HISTORY_SECONDS * sampleRate;
     this.renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
@@ -312,11 +375,23 @@ export class Terrain {
     this.controls.maxDistance = 34;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.08;
     this.controls.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (this.view === 'player') {
+      this.controls.autoRotate = false;
+      this.controls.minDistance = 13;
+      this.controls.minAzimuthAngle = 0.32;
+      this.controls.maxAzimuthAngle = 1.20;
+      this.controls.minPolarAngle = 0.78;
+      this.framingCamera = new PerspectiveCamera(45, 1);
+      this.addCoverWall();
+    }
 
     this.resetCamera();
 
     this.axes = new Axes(stage.querySelector('#axes')!, { width: WIDTH, depth: DEPTH, height: HEIGHT }, wallpaper);
-    this.controls.addEventListener('change', () => this.axes.invalidate());
+    this.controls.addEventListener('change', () => {
+      this.axes.invalidate();
+      if (this.framingCamera) this.framingDirty = true;
+    });
     this.surface.frustumCulled = false;
     this.trace.frustumCulled = false;
     this.trace.renderOrder = 2;
@@ -329,11 +404,59 @@ export class Terrain {
   }
 
   setPalette(name: Palette) {
-    const [low, mid, high] = PALETTES[name].colors;
-    this.material.uniforms.lowColor.value.set(low);
-    this.material.uniforms.midColor.value.set(mid);
-    this.material.uniforms.highColor.value.set(high);
-    this.trace.material.uniforms.glowColor.value.set(high);
+    this.setColors(PALETTES[name].colors);
+  }
+
+  setColors(colors: SpectrumColors, duration = 0) {
+    if (duration > 0) {
+      this.paletteTransition = {
+        from: this.colors.map((color) => color.clone()),
+        to: colors.map((color) => new Color(color)),
+        duration,
+        elapsed: 0,
+      };
+      return;
+    }
+    this.paletteTransition = undefined;
+    this.colors.forEach((color, index) => color.set(colors[index]));
+    this.trace.material.uniforms.glowColor.value.copy(this.colors[2]);
+  }
+
+  setCover(canvas: HTMLCanvasElement) {
+    if (!this.coverMaterial) return;
+    const texture = new CanvasTexture(canvas);
+    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    this.coverMaterial.map?.dispose();
+    this.coverMaterial.map = texture;
+    this.coverMaterial.needsUpdate = true;
+  }
+
+  private addCoverWall() {
+    this.coverMaterial = new MeshBasicMaterial({ toneMapped: false });
+    const cover = new Mesh(new PlaneGeometry(DEPTH, DEPTH), this.coverMaterial);
+    cover.rotation.y = Math.PI / 2;
+    cover.position.set(-SIDE, DEPTH / 2, 0);
+    cover.renderOrder = -2;
+
+    const backing = new Mesh(
+      new BoxGeometry(0.07, DEPTH, DEPTH),
+      new MeshBasicMaterial({ color: '#25252e', toneMapped: false }),
+    );
+    backing.position.copy(cover.position);
+    backing.position.x -= 0.04;
+    backing.renderOrder = -3;
+    this.scene.add(backing, cover);
+  }
+
+  private advancePalette(delta: number) {
+    const transition = this.paletteTransition;
+    if (!transition) return;
+    transition.elapsed += delta;
+    const time = Math.min(1, transition.elapsed / transition.duration);
+    const blend = time * time * (3 - 2 * time);
+    this.colors.forEach((color, index) => color.lerpColors(transition.from[index], transition.to[index], blend));
+    this.trace.material.uniforms.glowColor.value.copy(this.colors[2]);
+    if (time === 1) this.paletteTransition = undefined;
   }
 
   applyEffects(settings: EffectSettings) {
@@ -360,10 +483,13 @@ export class Terrain {
   }
 
   resetCamera() {
+    const damping = this.controls.enableDamping;
+    if (this.view === 'player') this.controls.enableDamping = false;
     this.controls.reset();
-    this.camera.position.copy(START_POSITION);
-    this.controls.target.copy(LOOK_AT);
+    this.camera.position.copy(this.view === 'player' ? PLAYER_POSITION : START_POSITION);
+    this.controls.target.copy(this.view === 'player' ? PLAYER_LOOK_AT : LOOK_AT);
     this.controls.update();
+    this.controls.enableDamping = damping;
   }
 
   private packRow(destination: Uint8Array, offset: number, levels: Float32Array, start: number) {
@@ -403,6 +529,11 @@ export class Terrain {
     // Compensate for differing display refresh rates.
     this.controls.autoRotateSpeed = this.orbitSpeed / 6 * delta * 60;
     this.controls.update();
+    if (this.framingCamera && this.framingDirty) {
+      fitPlayerCamera(this.camera, this.framingCamera, this.controls.target, this.width, this.height);
+      this.framingDirty = false;
+    }
+    this.advancePalette(delta);
     this.heightUniforms.historyPhase.value = phase;
     this.renderer.render(this.scene, this.camera);
 
@@ -414,8 +545,12 @@ export class Terrain {
     this.height = Math.max(height, 1);
     const aspect = this.width / this.height;
     this.camera.aspect = aspect;
-    this.camera.fov = Math.min(68, 45 * Math.max(1, 1.22 / aspect));
-    this.camera.updateProjectionMatrix();
+    if (this.framingCamera) {
+      this.framingDirty = true;
+    } else {
+      this.camera.fov = Math.min(68, 45 * Math.max(1, 1.22 / aspect));
+      this.camera.updateProjectionMatrix();
+    }
     this.trace.material.uniforms.viewport.value.set(this.width, this.height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
     this.renderer.setSize(this.width, this.height);

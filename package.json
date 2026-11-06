@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "npm run check && node scripts/build.mjs"
+    "build": "npm run check && node scripts/build.mjs",
+    "build:player": "npm run check && node scripts/build-player.mjs"
   },
   "dependencies": {
     "three": "0.147.0"
