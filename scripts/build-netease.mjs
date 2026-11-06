@@ -7,7 +7,7 @@ const output = 'dist-netease';
 const files = ['manifest.json', 'main.js', 'three-LICENSE.txt'];
 const archive = `${output}/${manifest.name}-${manifest.version}`;
 const webPage = await readFile('index.html', 'utf8');
-const effectControls = webPage.match(/<details class="controls effects">\s*<summary>[^<]*<\/summary>([\s\S]*?)<\/details>/)?.[1];
+const effectControls = webPage.match(/<form id="effects">[\s\S]*?<\/form>/)?.[0];
 if (!effectControls) throw new Error('Cannot find the shared effect controls in index.html.');
 
 await mkdir(output, { recursive: true });

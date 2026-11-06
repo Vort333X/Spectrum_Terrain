@@ -457,7 +457,8 @@ export class Terrain {
   setCover(canvas: HTMLCanvasElement) {
     if (!this.coverMaterial) return;
     const texture = new CanvasTexture(canvas);
-    texture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+    const maxAnisotropy = this.renderer.capabilities.getMaxAnisotropy();
+    texture.anisotropy = this.view === 'embedded-player' ? maxAnisotropy : Math.min(8, maxAnisotropy);
     this.coverMaterial.map?.dispose();
     this.coverMaterial.map = texture;
     this.coverMaterial.needsUpdate = true;

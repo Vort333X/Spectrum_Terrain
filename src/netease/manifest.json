@@ -1,9 +1,9 @@
 {
   "manifest_version": 1,
   "name": "SpectrumTerrain",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "Vort333X",
-  "description": "用当前歌曲封面驱动的立体播放页预览，含客户端音频检测。",
+  "description": "随网易云当前歌曲播放的实时三维频谱和高清立体封面。",
   "ncm3-compatible": true,
   "injects": {
     "Main": [{ "file": "./main.js" }]

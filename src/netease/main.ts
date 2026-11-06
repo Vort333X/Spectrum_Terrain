@@ -1,9 +1,11 @@
-import { SAMPLES_PER_SECOND, testSpectrum, type TestSignal } from '../audio';
+import { SAMPLES_PER_SECOND } from '../audio';
 import { bindEffects } from '../effects';
 import { coverTheme, fitCover } from '../player/artwork';
 import { SpectrumHistory } from '../spectrum-history';
 import { Terrain } from '../terrain';
-import { probeAudio } from './audio-probe';
+import { highResolutionCover, loadCover } from './cover-source';
+import { PcmSpectrum } from './pcm-spectrum';
+import { listenToPlayback } from './playback-audio';
 import css from './style.css';
 
 declare const NETEASE_EFFECT_CONTROLS: string;
@@ -14,12 +16,13 @@ const STAGE_CLASS = 'spectrum-terrain-stage';
 const LAYOUT_CLASS = 'spectrum-terrain-layout';
 const STYLE_ID = 'spectrum-terrain-netease-css';
 const COVER_POLL_MS = 350;
+const COVER_TEXTURE_SIZE = 1024;
 const REFERENCE_EFFECTS = { opacity: 70, trail: 51, glow: 50, radius: 12, gain: 115, smoothing: 50, orbitspeed: 10 };
 
 function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   const stage = document.createElement('div');
   stage.className = STAGE_CLASS;
-  stage.setAttribute('aria-label', 'Spectrum Terrain 立体频谱预览');
+  stage.setAttribute('aria-label', 'Spectrum Terrain 实时三维频谱');
   const axes = document.createElement('div');
   axes.dataset.spectrumAxes = '';
   const tools = document.createElement('details');
@@ -27,14 +30,12 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   tools.innerHTML = `
     <summary>频谱设置</summary>
     <div class="spectrum-terrain-panel">
-      <div class="spectrum-terrain-meta"><span>演示频谱</span><output data-fps>— FPS</output></div>
+      <div class="spectrum-terrain-meta"><span data-audio role="status">等待播放音频</span><output data-fps>— FPS</output></div>
       <div class="spectrum-terrain-actions">
         <button type="button" data-orbit aria-pressed="false">自动绕转</button>
         <button type="button" data-reset-view>复位视角</button>
       </div>
       ${NETEASE_EFFECT_CONTROLS}
-      <button type="button" data-probe>检测网易云音频</button>
-      <p role="status" hidden></p>
     </div>`;
   stage.append(axes, tools);
   layout.append(stage);
@@ -66,16 +67,14 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   }
   bindEffects(form, (settings) => terrain.applyEffects(settings), true);
   const history = new SpectrumHistory(terrain, SAMPLES_PER_SECOND);
+  const audio = new PcmSpectrum();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const signal = tools.querySelector<HTMLSelectElement>('#spectrum-terrain-test-signal')!;
   const freeze = tools.querySelector<HTMLInputElement>('#spectrum-terrain-freeze')!;
   const orbit = tools.querySelector<HTMLButtonElement>('[data-orbit]')!;
-  const check = tools.querySelector<HTMLButtonElement>('[data-probe]')!;
-  const status = tools.querySelector<HTMLElement>('[role="status"]')!;
+  const audioLabel = tools.querySelector<HTMLElement>('[data-audio]')!;
   const fpsLabel = tools.querySelector<HTMLOutputElement>('[data-fps]')!;
-  const sample = (time: number, levels: Float32Array) => testSpectrum(signal.value as TestSignal, time, levels);
-  history.reset(sample);
-  signal.addEventListener('change', () => history.reset(sample));
+  const sample = (_time: number, levels: Float32Array) => audio.sample(levels);
+  history.reset();
   orbit.addEventListener('click', () => {
     terrain.autoRotate = !terrain.autoRotate;
     orbit.setAttribute('aria-pressed', String(terrain.autoRotate));
@@ -86,16 +85,17 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   let lastFrame: number | undefined;
   let lastCover = '';
   let request = 0;
-  let cancelProbe: (() => void) | undefined;
+  let stopAudio: (() => void) | undefined;
   let fpsSince = 0;
   let renderedFrames = 0;
 
   function frame(now: number) {
     const delta = lastFrame === undefined ? 0 : Math.min(0.1, (now - lastFrame) / 1000);
     lastFrame = now;
-    if (!reducedMotion.matches && !freeze.checked) history.advance(delta, sample);
+    if (!freeze.checked) history.advance(delta, sample);
     terrain.render(delta, history.phase);
     if (tools.open) {
+      updateAudioLabel();
       fpsSince ||= now;
       renderedFrames++;
       if (now - fpsSince >= 600) {
@@ -112,65 +112,90 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     fpsLabel.value = '— FPS';
   });
 
+  function updateAudioLabel() {
+    const label = !stopAudio ? '客户端音频不可用' : audio.active ? '网易云实时音频' : '等待播放音频';
+    if (audioLabel.textContent !== label) audioLabel.textContent = label;
+  }
+
+  function startAudio() {
+    if (stopAudio) return;
+    try {
+      stopAudio = listenToPlayback((bytes, pts) => audio.push(bytes, pts), () => {
+        stopAudio = undefined;
+        updateAudioLabel();
+      });
+    } catch (error) {
+      console.warn('[SpectrumTerrain] 无法连接网易云音频', error);
+    }
+    updateAudioLabel();
+  }
+
   function restoreCover() {
     cancelAnimationFrame(frameId);
     frameId = 0;
     lastFrame = undefined;
+    stopAudio?.();
+    stopAudio = undefined;
+    audio.reset();
+    history.reset();
     delete stage.dataset.ready;
     layout.classList.remove(LAYOUT_CLASS);
   }
 
   async function setCover(image: HTMLImageElement) {
     const src = image.currentSrc || image.src;
-    if (!src || lastCover === src || !image.complete || !image.naturalWidth) return;
-    lastCover = src;
+    const highRes = src ? highResolutionCover(src) : undefined;
+    const key = highRes ?? src;
+    if (!src || lastCover === key || !image.complete || !image.naturalWidth) return;
+    lastCover = key;
     const current = ++request;
-    try {
-      let cover = fitCover(image);
-      let theme;
-      try {
-        theme = coverTheme(cover);
-      } catch (error) {
-        if (!(error instanceof DOMException) || error.name !== 'SecurityError') throw error;
-        const corsImage = new Image();
-        corsImage.crossOrigin = 'anonymous';
-        corsImage.src = src;
-        await corsImage.decode();
-        cover = fitCover(corsImage);
-        theme = coverTheme(cover);
-      }
-      if (request !== current || !stage.isConnected) return;
+    const stillCurrent = () => request === current && stage.isConnected;
+
+    function applyCover(source: HTMLImageElement) {
+      if (!stillCurrent()) return false;
+      const cover = fitCover(source, COVER_TEXTURE_SIZE);
+      const theme = coverTheme(cover);
       terrain.setCover(cover);
       terrain.setColors(theme.stops, frameId && !reducedMotion.matches ? 0.6 : 0);
       stage.style.setProperty('--spectrum-accent', theme.accent);
       stage.style.setProperty('--spectrum-wash', theme.wash);
       layout.classList.add(LAYOUT_CLASS);
       stage.dataset.ready = '';
-      if (!frameId) frameId = requestAnimationFrame(frame);
-    } catch (error) {
-      if (request !== current) return;
-      restoreCover();
-      console.warn('[SpectrumTerrain] 读取封面失败', error);
+      if (!frameId) {
+        startAudio();
+        frameId = requestAnimationFrame(frame);
+      }
+      return true;
     }
-  }
 
-  function showProbeResult(message: string) {
-    check.disabled = false;
-    status.textContent = message;
-    console.info('[SpectrumTerrain]', message);
-  }
-
-  check.addEventListener('click', () => {
-    check.disabled = true;
-    status.hidden = false;
-    status.textContent = '检测中，请保持播放…';
+    let applied = false;
     try {
-      cancelProbe = probeAudio(showProbeResult);
+      applied = applyCover(image);
     } catch (error) {
-      console.warn('[SpectrumTerrain] 音频检测失败', error);
-      showProbeResult('音频检测失败');
+      if (!(error instanceof DOMException) || error.name !== 'SecurityError') {
+        console.warn('[SpectrumTerrain] 读取封面失败', error);
+      }
     }
-  });
+
+    if (highRes && highRes !== src && (!applied || Math.max(image.naturalWidth, image.naturalHeight) < COVER_TEXTURE_SIZE)) {
+      try {
+        const upgraded = await loadCover(highRes);
+        if (!applied || Math.max(upgraded.naturalWidth, upgraded.naturalHeight) > Math.max(image.naturalWidth, image.naturalHeight)) {
+          applied = applyCover(upgraded) || applied;
+        }
+      } catch {
+        // Leave the existing cover visible while offline or if the CDN rejects the larger request.
+      }
+    }
+    if (!applied && stillCurrent()) {
+      try {
+        applied = applyCover(await loadCover(src));
+      } catch (error) {
+        console.warn('[SpectrumTerrain] 无法读取客户端封面', error);
+      }
+      if (!applied && stillCurrent()) restoreCover();
+    }
+  }
 
   canvas.addEventListener('webglcontextlost', restoreCover);
 
@@ -182,7 +207,6 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     dispose() {
       request++;
       resizeObserver.disconnect();
-      cancelProbe?.();
       canvas.removeEventListener('webglcontextlost', restoreCover);
       restoreCover();
       terrain.dispose();

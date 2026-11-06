@@ -16,15 +16,16 @@ function canvasAtSize(size: number) {
   return canvas;
 }
 
-export function fitCover(image: HTMLImageElement) {
-  const canvas = canvasAtSize(COVER_SIZE);
+export function fitCover(image: HTMLImageElement, size = COVER_SIZE) {
+  const canvas = canvasAtSize(size);
   const context = canvas.getContext('2d')!;
-  const scale = COVER_SIZE / Math.max(image.naturalWidth, image.naturalHeight);
+  const scale = size / Math.max(image.naturalWidth, image.naturalHeight);
   const width = image.naturalWidth * scale;
   const height = image.naturalHeight * scale;
   context.fillStyle = '#15151a';
-  context.fillRect(0, 0, COVER_SIZE, COVER_SIZE);
-  context.drawImage(image, (COVER_SIZE - width) / 2, (COVER_SIZE - height) / 2, width, height);
+  context.fillRect(0, 0, size, size);
+  if (size > COVER_SIZE) context.imageSmoothingQuality = 'high';
+  context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
   return canvas;
 }
 

@@ -81,8 +81,7 @@
 }
 
 .spectrum-terrain-meta,
-.spectrum-terrain-actions,
-.spectrum-terrain-panel .test-source {
+.spectrum-terrain-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -95,8 +94,7 @@
   color: var(--spectrum-accent, #c8c3ce);
 }
 
-.spectrum-terrain-panel button,
-.spectrum-terrain-panel select {
+.spectrum-terrain-panel button {
   border: 1px solid #ffffff26;
   border-radius: 5px;
   padding: 3px 7px;
@@ -107,11 +105,6 @@
 
 .spectrum-terrain-panel button[aria-pressed="true"] {
   border-color: var(--spectrum-accent, #c8c3ce);
-}
-
-.spectrum-terrain-panel button:disabled {
-  opacity: 0.65;
-  cursor: default;
 }
 
 .spectrum-terrain-panel .effect-check {
@@ -132,9 +125,4 @@
   grid-column: 1 / -1;
   width: 100%;
   margin: 0;
-}
-
-.spectrum-terrain-panel [data-probe],
-.spectrum-terrain-panel [role="status"] {
-  margin-top: 8px;
 }

@@ -6,7 +6,7 @@ export const HISTORY_ROWS = SAMPLES_PER_SECOND * HISTORY_SECONDS + 2;
 
 export const MIN_HZ = 30;
 export const MAX_HZ = 16_000;
-const FFT_SIZE = 8192;
+export const FFT_SIZE = 8192;
 const FLOOR_DB = -85;
 const CEILING_DB = -18;
 
@@ -16,6 +16,30 @@ interface Capture {
   source: MediaStreamAudioSourceNode;
   analyser: AnalyserNode;
   ranges: { start: number; end: number }[];
+}
+
+export function frequencyRanges(sampleRate: number) {
+  const hzPerBin = sampleRate / FFT_SIZE;
+  const topHz = Math.min(MAX_HZ, sampleRate / 2);
+  const bandBin = (edge: number) => {
+    const fraction = Math.min(1, Math.max(0, (edge - 0.5) / (BANDS - 1)));
+    return MIN_HZ * (topHz / MIN_HZ) ** fraction / hzPerBin;
+  };
+  return Array.from({ length: BANDS }, (_, index) => {
+    const start = Math.floor(bandBin(index));
+    const end = Math.min(FFT_SIZE / 2, Math.max(start + 1, Math.ceil(bandBin(index + 1))));
+    return { start, end };
+  });
+}
+
+export function readSpectrumBands(bins: Float32Array, ranges: Capture['ranges'], target: Float32Array) {
+  for (const [band, range] of ranges.entries()) {
+    let peak = FLOOR_DB;
+    for (let bin = range.start; bin < range.end; bin++) {
+      peak = Math.max(peak, bins[bin]);
+    }
+    target[band] = Math.min(1, (peak - FLOOR_DB) / (CEILING_DB - FLOOR_DB));
+  }
 }
 
 export class SystemAudioMonitor {
@@ -54,17 +78,7 @@ export class SystemAudioMonitor {
       await context.resume();
 
       if (track.readyState !== 'live' || !stream.active) throw new Error('共享已结束，请重新开始监听。');
-      const hzPerBin = context.sampleRate / FFT_SIZE;
-      const topHz = Math.min(MAX_HZ, context.sampleRate / 2);
-      const bandBin = (edge: number) => {
-        const fraction = Math.min(1, Math.max(0, (edge - 0.5) / (BANDS - 1)));
-        return MIN_HZ * (topHz / MIN_HZ) ** fraction / hzPerBin;
-      };
-      const ranges = Array.from({ length: BANDS }, (_, index) => {
-        const start = Math.floor(bandBin(index));
-        const end = Math.min(this.bins.length, Math.max(start + 1, Math.ceil(bandBin(index + 1))));
-        return { start, end };
-      });
+      const ranges = frequencyRanges(context.sampleRate);
       this.capture = { stream, context, source, analyser, ranges };
 
       for (const sharedTrack of stream.getTracks()) {
@@ -103,13 +117,7 @@ export class SystemAudioMonitor {
     }
 
     capture.analyser.getFloatFrequencyData(this.bins);
-    for (const [band, range] of capture.ranges.entries()) {
-      let peak = FLOOR_DB;
-      for (let bin = range.start; bin < range.end; bin++) {
-        peak = Math.max(peak, this.bins[bin]);
-      }
-      target[band] = Math.min(1, (peak - FLOOR_DB) / (CEILING_DB - FLOOR_DB));
-    }
+    readSpectrumBands(this.bins, capture.ranges, target);
   }
 }
 
