@@ -12,8 +12,6 @@ declare global {
 }
 
 const WALLPAPER_SAMPLE_RATE = 30;
-const ATTACK_SECONDS = 0.045;
-const RELEASE_SECONDS = 0.14;
 
 function start() {
   const stage = document.querySelector<HTMLElement>('#stage')!;
@@ -36,8 +34,6 @@ function start() {
 
   const sampleRate = isWallpaper ? WALLPAPER_SAMPLE_RATE : SAMPLES_PER_SECOND;
   const stepDuration = 1 / sampleRate;
-  const attack = 1 - Math.exp(-stepDuration / ATTACK_SECONDS);
-  const release = 1 - Math.exp(-stepDuration / RELEASE_SECONDS);
   const terrain = new Terrain(stage, sampleRate, isWallpaper);
   const setEffects = bindEffects(effects, (settings) => terrain.applyEffects(settings), !isWallpaper);
   const target = new Float32Array(BANDS);
@@ -81,7 +77,7 @@ function start() {
 
     for (let index = 0; index < BANDS; index++) {
       const value = target[index];
-      const response = value > smoothed[index] ? attack : release;
+      const response = value > smoothed[index] ? 0.90 : 0.50;
       smoothed[index] += (value - smoothed[index]) * response;
     }
 
