@@ -1,5 +1,5 @@
 import {
-  AdditiveBlending, BufferAttribute, BufferGeometry, Color, CustomBlending, DataTexture, DoubleSide,
+  BufferAttribute, BufferGeometry, Color, CustomBlending, DataTexture, DoubleSide,
   Mesh, OneMinusSrcAlphaFactor, PerspectiveCamera, Scene, SrcAlphaFactor,
   ShaderMaterial, Vector2, Vector3, WebGLRenderer,
 } from 'three';
@@ -20,6 +20,15 @@ const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
 const START_POSITION = new Vector3(9.4, 7.5, 13.3);
 const LOOK_AT = new Vector3(0, 0.87, 0);
+
+function gaussianWeights(radius: number, sigma: number) {
+  const weights = Array.from({ length: radius * 2 + 1 }, (_, index) => Math.exp(-0.5 * ((index - radius) / sigma) ** 2));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  return weights.map((weight) => weight / total);
+}
+
+const DETAIL_WEIGHTS = gaussianWeights(3, 1.25);
+const ENVELOPE_WEIGHTS = gaussianWeights(13, 5.0);
 
 const palettes = {
   ember: ['#331655', '#a53680', '#ffb484'],
@@ -106,8 +115,8 @@ const fragmentShader = `
 
   void main() {
     float level = clamp(vHeight / ${HEIGHT.toFixed(1)}, 0.0, 1.0);
-    vec3 color = mix(lowColor, midColor, smoothstep(0.0, 0.57, level));
-    color = mix(color, highColor, smoothstep(0.37, 0.94, level));
+    vec3 color = mix(lowColor, midColor, smoothstep(0.0, 0.49, level));
+    color = mix(color, highColor, smoothstep(0.29, 0.82, level));
     vec3 normal = normalize(vNormal);
     float light = 0.80 + 0.26 * max(dot(normal, normalize(vec3(-0.65, 1.0, 0.8))), 0.0);
     float ageFade = mix(1.0, trailOpacity, smoothstep(0.0, 1.0, vAge));
@@ -153,6 +162,7 @@ const traceVertexShader = `
 `;
 
 const traceFragmentShader = `
+  uniform vec3 baseColor;
   uniform vec3 glowColor;
   uniform float glowRadius;
   uniform float glowStrength;
@@ -161,12 +171,12 @@ const traceFragmentShader = `
 
   void main() {
     float distanceSquared = vSide * vSide;
-    float core = exp(-distanceSquared * glowRadius * glowRadius * 1.45);
-    float halo = glowStrength * (0.56 * exp(-distanceSquared * 12.0) + 0.18 * exp(-distanceSquared * 3.5));
-    float edge = 1.0 - smoothstep(0.65, 1.0, abs(vSide));
-    float intensity = mix(0.34, 1.0, smoothstep(0.0, 0.44, vLevel));
-    vec3 color = mix(glowColor, vec3(0.94, 1.0, 0.98), core * 0.48);
-    gl_FragColor = vec4(color, clamp((core + halo) * edge * intensity, 0.0, 1.0));
+    float core = exp(-distanceSquared * glowRadius * glowRadius * 2.0);
+    float halo = glowStrength * (0.34 * exp(-distanceSquared * 16.0) + 0.09 * exp(-distanceSquared * 5.0));
+    float edge = 1.0 - smoothstep(0.60, 1.0, abs(vSide));
+    float intensity = mix(0.33, 0.93, smoothstep(0.0, 0.68, vLevel));
+    vec3 color = mix(baseColor, glowColor, smoothstep(0.08, 0.76, vLevel));
+    gl_FragColor = vec4(color, min(1.0, (0.84 * core + halo) * edge * intensity));
   }
 `;
 
@@ -292,6 +302,7 @@ export class Terrain {
   private trace = new Mesh(makeTrace(), new ShaderMaterial({
     uniforms: {
       ...this.heightUniforms,
+      baseColor: { value: new Color() },
       glowColor: { value: new Color() },
       glowRadius: { value: 8 },
       glowStrength: { value: 0 },
@@ -301,7 +312,6 @@ export class Terrain {
     fragmentShader: traceFragmentShader,
     transparent: true,
     depthWrite: false,
-    blending: AdditiveBlending,
   }));
   private width = 1;
   private height = 1;
@@ -341,6 +351,7 @@ export class Terrain {
     this.material.uniforms.lowColor.value.set(low);
     this.material.uniforms.midColor.value.set(mid);
     this.material.uniforms.highColor.value.set(high);
+    this.trace.material.uniforms.baseColor.value.set(mid);
     this.trace.material.uniforms.glowColor.value.set(high);
   }
 
@@ -351,7 +362,7 @@ export class Terrain {
     this.trace.material.uniforms.glowStrength.value = settings.glow / 100;
     this.trace.material.uniforms.glowRadius.value = settings.radius;
     this.heightUniforms.levelGain.value = settings.gain / 100;
-    this.heightUniforms.frequencySmoothing.value = settings.smoothing / 100;
+    this.heightUniforms.frequencySmoothing.value = 1 - (1 - settings.smoothing / 100) ** 3;
     this.orbitSpeed = settings.orbitspeed;
   }
 
@@ -375,17 +386,23 @@ export class Terrain {
   }
 
   private packRow(destination: Uint8Array, offset: number, levels: Float32Array, start: number) {
-    const last = BANDS - 1;
-    for (let band = 0; band < BANDS; band++) {
-      const nearLeft = levels[start + Math.max(0, band - 1)];
-      const nearRight = levels[start + Math.min(last, band + 1)];
-      const farLeft = levels[start + Math.max(0, band - 2)];
-      const farRight = levels[start + Math.min(last, band + 2)];
-      this.filteredRow[band] = (farLeft + farRight + 4 * (nearLeft + nearRight) + 6 * levels[start + band]) / 16;
-    }
-    // RG stores the raw curve, BA stores its weighted average for live blending.
-    packCurve(destination, offset, levels, start);
+    // Store both envelopes so the smoothing control also works on frozen history.
+    this.filterRow(levels, start, DETAIL_WEIGHTS);
+    packCurve(destination, offset, this.filteredRow, 0);
+    this.filterRow(levels, start, ENVELOPE_WEIGHTS);
     packCurve(destination, offset + 2, this.filteredRow, 0);
+  }
+
+  private filterRow(levels: Float32Array, start: number, weights: number[]) {
+    const radius = (weights.length - 1) / 2;
+    for (let band = 0; band < BANDS; band++) {
+      let value = 0;
+      for (let index = 0; index < weights.length; index++) {
+        const sourceBand = Math.max(0, Math.min(BANDS - 1, band + index - radius));
+        value += levels[start + sourceBand] * weights[index];
+      }
+      this.filteredRow[band] = value;
+    }
   }
 
   replaceHistory(levels: Float32Array) {

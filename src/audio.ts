@@ -8,7 +8,7 @@ export const MIN_HZ = 30;
 export const MAX_HZ = 16_000;
 const FFT_SIZE = 8192;
 const FLOOR_DB = -85;
-const CEILING_DB = -18;
+const CEILING_DB = -6;
 
 interface Capture {
   stream: MediaStream;
@@ -104,11 +104,13 @@ export class SystemAudioMonitor {
 
     capture.analyser.getFloatFrequencyData(this.bins);
     for (const [band, range] of capture.ranges.entries()) {
-      let peak = FLOOR_DB;
+      let power = 0;
       for (let bin = range.start; bin < range.end; bin++) {
-        peak = Math.max(peak, this.bins[bin]);
+        power += 10 ** (this.bins[bin] / 10);
       }
-      target[band] = Math.min(1, (peak - FLOOR_DB) / (CEILING_DB - FLOOR_DB));
+      const bandDb = 10 * Math.log10(power / (range.end - range.start));
+      const level = Math.max(0, Math.min(1, (bandDb - FLOOR_DB) / (CEILING_DB - FLOOR_DB)));
+      target[band] = level ** 1.35;
     }
   }
 }
