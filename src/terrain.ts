@@ -1,6 +1,6 @@
 import {
   AdditiveBlending, BoxGeometry, BufferAttribute, BufferGeometry, CanvasTexture, Color, CustomBlending,
-  DataTexture, DoubleSide, MathUtils, Mesh, MeshBasicMaterial, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry,
+  DataTexture, DoubleSide, MathUtils, Mesh, MeshBasicMaterial, OneFactor, OneMinusSrcAlphaFactor, PerspectiveCamera, PlaneGeometry,
   LineSegments, Scene, SrcAlphaFactor, ShaderMaterial, Vector2, Vector3, WebGLRenderer, type ColorRepresentation,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -24,6 +24,7 @@ const LOOK_AT = new Vector3(0, 0.87, 0);
 const PLAYER_POSITION = new Vector3(17.0, 7.7, 16.0);
 const PLAYER_LOOK_AT = new Vector3(-0.5, 2.75, 0);
 const PLAYER_DISTANCE = PLAYER_POSITION.distanceTo(PLAYER_LOOK_AT);
+const EMBEDDED_PLAYER_POSITION = new Vector3(14, 4.8, 20).sub(PLAYER_LOOK_AT).setLength(PLAYER_DISTANCE).add(PLAYER_LOOK_AT);
 const PLAYER_BOUNDS = [
   ...[-SIDE, SIDE].flatMap((x) => [-FRONT, FRONT].flatMap((z) => [
     new Vector3(x, 0, z),
@@ -364,9 +365,21 @@ export class Terrain {
     this.material.uniforms.highColor.value,
   ];
 
-  constructor(stage: HTMLElement, sampleRate: number, wallpaper: boolean, private readonly view: 'terrain' | 'player' = 'terrain') {
+  constructor(stage: HTMLElement, sampleRate: number, wallpaper: boolean, private readonly view: 'terrain' | 'player' | 'embedded-player' = 'terrain') {
     this.heightUniforms.historySpan.value = HISTORY_SECONDS * sampleRate;
-    this.renderer = new WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+    const embedded = this.view === 'embedded-player';
+    this.renderer = new WebGLRenderer({ antialias: true, alpha: embedded, powerPreference: 'high-performance' });
+    if (embedded) {
+      this.renderer.setClearAlpha(0);
+      // The transparent drawing buffer composites over the player's own gradient.
+      this.material.blendSrcAlpha = OneFactor;
+      const glow = this.trace.material;
+      glow.blending = CustomBlending;
+      glow.blendSrc = SrcAlphaFactor;
+      glow.blendDst = OneFactor;
+      glow.blendSrcAlpha = OneFactor;
+      glow.blendDstAlpha = OneMinusSrcAlphaFactor;
+    }
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
     stage.prepend(this.renderer.domElement);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -376,7 +389,7 @@ export class Terrain {
     this.controls.maxDistance = 34;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.08;
     this.controls.autoRotate = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (this.view === 'player') {
+    if (this.view !== 'terrain') {
       this.controls.autoRotate = false;
       this.controls.minDistance = 13;
       this.controls.minAzimuthAngle = 0.32;
@@ -503,10 +516,11 @@ export class Terrain {
 
   resetCamera() {
     const damping = this.controls.enableDamping;
-    if (this.view === 'player') this.controls.enableDamping = false;
+    if (this.view !== 'terrain') this.controls.enableDamping = false;
     this.controls.reset();
-    this.camera.position.copy(this.view === 'player' ? PLAYER_POSITION : START_POSITION);
-    this.controls.target.copy(this.view === 'player' ? PLAYER_LOOK_AT : LOOK_AT);
+    const position = this.view === 'embedded-player' ? EMBEDDED_PLAYER_POSITION : PLAYER_POSITION;
+    this.camera.position.copy(this.view === 'terrain' ? START_POSITION : position);
+    this.controls.target.copy(this.view === 'terrain' ? LOOK_AT : PLAYER_LOOK_AT);
     this.controls.update();
     this.controls.enableDamping = damping;
   }

@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "SpectrumTerrain",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "Vort333X",
   "description": "用当前歌曲封面驱动的立体播放页预览，含客户端音频检测。",
   "ncm3-compatible": true,

@@ -21,14 +21,15 @@ npm run build
 
 ## 网易云音乐插件预览
 
-Windows 下使用 Node.js 22 及以上版本和系统自带的 `tar.exe`，运行 `npm run build:netease`，生成 `dist-netease/SpectrumTerrain-0.1.0.plugin`。
+Windows 下使用 Node.js 22 及以上版本和系统自带的 `tar.exe`，运行 `npm run build:netease`，在 `dist-netease` 中生成 `SpectrumTerrain-<版本>.plugin`。
 
 1. 安装 [BetterNCM](https://github.com/std-microblock/chromatic/wiki/使用说明)，确认客户端里能打开插件管理器。
-2. 从系统托盘退出网易云，将整个 `.plugin` 文件复制到 BetterNCM 数据目录下的 `plugins` 文件夹。可以从插件管理器的「Open Folder」找到数据目录。
-3. 重开网易云并展开经典播放页。左侧场景从客户端读取当前封面和主色，右侧歌词和底部播放器由客户端管理。
-4. 播放歌曲时点「检测网易云音频」，查看收到的音频包大小、时间戳间隔和格式字段。这一版曲面使用演示频谱，实际音频分析还需根据客户端回包格式接入。检测只显示包的元数据。
+2. 从系统托盘退出网易云，将整个 `.plugin` 文件复制到 BetterNCM 数据目录下的 `plugins` 文件夹。升级时先移出旧版本的 SpectrumTerrain 插件包。可以从插件管理器的「Open Folder」找到数据目录。
+3. 重开网易云并展开经典播放页。左侧场景从客户端读取当前封面和主色，通过透明画布叠在网易云背景上。歌词和播放控件沿用客户端布局。
+4. 左下角「频谱设置」提供网页端的效果参数和测试信号，也会显示实测绘制帧率。插件沿用网页端的 60 次/秒频谱采样、255 列曲面和 2.5 秒历史。
+5. 播放歌曲时，可在「频谱设置」中点「检测网易云音频」，查看收到的音频包大小、时间戳间隔和格式字段。这一版曲面使用演示频谱，实际音频分析还需根据客户端回包格式接入。检测只显示包的元数据。
 
-要恢复原播放页，从托盘退出网易云，将 `SpectrumTerrain-0.1.0.plugin` 从 `plugins` 移出，再打开客户端。
+要恢复原播放页，从托盘退出网易云，将 SpectrumTerrain 插件包从 `plugins` 移出，再打开客户端。
 
 ## 效果调试
 

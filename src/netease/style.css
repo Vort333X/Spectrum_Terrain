@@ -1,34 +1,18 @@
-#vinyl-page-container .spectrum-terrain-layout > .side:first-child {
-  flex: 0 0 24px;
-  min-width: 0;
-}
-
-#vinyl-page-container .spectrum-terrain-layout > .vinyl {
-  flex: 1 1 0;
-  min-width: 0;
-  height: max(260px, calc(100% - 190px)) !important;
-}
-
-#vinyl-page-container .spectrum-terrain-layout > .center {
-  flex: 0 0 18px;
-  min-width: 0;
-}
-
-#vinyl-page-container .spectrum-terrain-stage[data-ready] ~ .cover-area,
-#vinyl-page-container .spectrum-terrain-stage[data-ready] ~ .cover-area * {
+#vinyl-page-container .spectrum-terrain-layout > .vinyl > .cover-area,
+#vinyl-page-container .spectrum-terrain-layout > .vinyl > .cover-area * {
   visibility: hidden !important;
   pointer-events: none;
 }
 
 .spectrum-terrain-stage {
   position: absolute;
-  inset: 0;
-  isolation: isolate;
-  z-index: 1;
+  top: clamp(60px, 8.5vh, 88px);
+  bottom: clamp(92px, 12vh, 120px);
+  left: clamp(8px, 0.9vw, 16px);
+  z-index: 0;
   overflow: hidden;
-  border-radius: 10px;
   color: #e9e9ee;
-  background: #000;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--spectrum-bleed, 0px)), transparent);
 }
 
 .spectrum-terrain-stage:not([data-ready]) {
@@ -60,30 +44,97 @@
 
 .spectrum-terrain-tools {
   position: absolute;
-  inset: 10px 10px auto;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-  pointer-events: none;
-  font: 12px/1.4 system-ui, sans-serif;
+  bottom: 3px;
+  left: 12px;
+  color-scheme: dark;
+  color: #e9e9ee;
+  font: 12px/1.5 system-ui, sans-serif;
 }
 
-.spectrum-terrain-tools > button,
-.spectrum-terrain-tools > span {
-  border: 1px solid #ffffff30;
+.spectrum-terrain-tools > summary {
+  width: fit-content;
+  padding: 3px 8px;
   border-radius: 6px;
-  padding: 4px 8px;
-  color: var(--spectrum-accent, #e9e9ee);
-  background: var(--spectrum-wash, #14141a);
-}
-
-.spectrum-terrain-tools > button {
-  pointer-events: auto;
+  color: #c8c3ce;
   cursor: pointer;
 }
 
-.spectrum-terrain-tools > button:disabled {
+.spectrum-terrain-tools[open] > summary,
+.spectrum-terrain-tools > summary:hover {
+  background: #ffffff15;
+  color: #fff;
+}
+
+.spectrum-terrain-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  box-sizing: border-box;
+  width: min(270px, 40vw);
+  max-height: max(140px, calc(100vh - 230px));
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #ffffff2e;
+  border-radius: 10px;
+  background: var(--spectrum-wash, #14141a);
+  accent-color: var(--spectrum-accent, #c8c3ce);
+}
+
+.spectrum-terrain-meta,
+.spectrum-terrain-actions,
+.spectrum-terrain-panel .test-source {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.spectrum-terrain-meta,
+.spectrum-terrain-panel .effect-value {
+  color: var(--spectrum-accent, #c8c3ce);
+}
+
+.spectrum-terrain-panel button,
+.spectrum-terrain-panel select {
+  border: 1px solid #ffffff26;
+  border-radius: 5px;
+  padding: 3px 7px;
+  color: inherit;
+  background: #ffffff14;
+  cursor: pointer;
+}
+
+.spectrum-terrain-panel button[aria-pressed="true"] {
+  border-color: var(--spectrum-accent, #c8c3ce);
+}
+
+.spectrum-terrain-panel button:disabled {
   opacity: 0.65;
   cursor: default;
+}
+
+.spectrum-terrain-panel .effect-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 5px 0;
+}
+
+.spectrum-terrain-panel .effect-range {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  row-gap: 2px;
+  margin: 5px 0;
+}
+
+.spectrum-terrain-panel input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0;
+}
+
+.spectrum-terrain-panel [data-probe],
+.spectrum-terrain-panel [role="status"] {
+  margin-top: 8px;
 }
