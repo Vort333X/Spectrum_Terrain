@@ -3,10 +3,11 @@ import { FFT_SIZE, frequencyRanges, readSpectrumBands, SAMPLES_PER_SECOND } from
 // The client's lyric effects consume interleaved signed 16-bit stereo PCM at 48 kHz.
 const SAMPLE_RATE = 48_000;
 const FRAMES_PER_ROW = SAMPLE_RATE / SAMPLES_PER_SECOND;
-const BUFFER_FRAMES = FRAMES_PER_ROW * 6;
+const MAX_QUEUE_FRAMES = SAMPLE_RATE * 0.12;
 const RING_SIZE = FFT_SIZE * 4;
 const RING_MASK = RING_SIZE - 1;
-const IDLE_MS = 240;
+const FADE_START_MS = 250;
+const IDLE_MS = 600;
 
 export class PcmSpectrum {
   private readonly ring = new Float32Array(RING_SIZE);
@@ -22,7 +23,6 @@ export class PcmSpectrum {
   private written = 0;
   private cursor = 0;
   private analysed = -1;
-  private primed = false;
   private lastPacket = -Infinity;
   private lastPts?: number;
 
@@ -45,7 +45,6 @@ export class PcmSpectrum {
   reset() {
     this.written = this.cursor = 0;
     this.analysed = -1;
-    this.primed = false;
     this.lastPacket = -Infinity;
     this.lastPts = undefined;
   }
@@ -53,29 +52,37 @@ export class PcmSpectrum {
   push(bytes: Uint8Array, pts?: number) {
     if (bytes.length < 4 || bytes.length % 4 !== 0) return;
     const jump = pts !== undefined && this.lastPts !== undefined ? pts - this.lastPts : 0;
-    if (!this.active || jump < -80 || jump > 400) this.reset();
+    // Native callbacks can arrive late while audio continues playing. Preserve
+    // the window across short delivery gaps, and reset for actual timeline jumps.
+    if (performance.now() - this.lastPacket > 1000 || jump < -500 || jump > 2000) this.reset();
     this.lastPacket = performance.now();
     this.lastPts = pts;
+    const firstPacket = this.written === 0;
     const pcm = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     for (let byte = 0; byte < pcm.byteLength; byte += 4) {
       const left = pcm.getInt16(byte, true);
       const right = pcm.getInt16(byte + 2, true);
       this.ring[this.written++ & RING_MASK] = (left + right) / 65_536;
     }
+    if (firstPacket) this.cursor = this.written;
   }
 
   sample(target: Float32Array) {
     const queued = this.written - this.cursor;
-    if (!this.active || (!this.primed && queued < BUFFER_FRAMES)) {
+    if (!this.active || this.written === 0) {
       target.fill(0);
       return;
     }
-    this.primed = true;
     // Keep the 60 Hz history moving between the client's batched audio callbacks.
-    if (queued > 2 * BUFFER_FRAMES) this.cursor = this.written - BUFFER_FRAMES;
+    if (queued > MAX_QUEUE_FRAMES) this.cursor = this.written - FRAMES_PER_ROW;
     this.cursor = Math.min(this.written, this.cursor + FRAMES_PER_ROW);
     if (this.cursor !== this.analysed) this.transform();
     readSpectrumBands(this.bins, this.ranges, target);
+    const stale = performance.now() - this.lastPacket;
+    if (stale > FADE_START_MS) {
+      const fade = (IDLE_MS - stale) / (IDLE_MS - FADE_START_MS);
+      for (let band = 0; band < target.length; band++) target[band] *= fade;
+    }
   }
 
   private transform() {

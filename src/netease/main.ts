@@ -1,4 +1,4 @@
-import { SAMPLES_PER_SECOND } from '../shared/audio';
+import { HISTORY_SECONDS, SAMPLES_PER_SECOND } from '../shared/audio';
 import { bindEffects } from '../shared/effects';
 import { coverTheme, fitCover } from '../shared/artwork';
 import { SpectrumHistory } from '../shared/spectrum-history';
@@ -89,9 +89,10 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   let renderedFrames = 0;
 
   function frame(now: number) {
-    const delta = lastFrame === undefined ? 0 : Math.min(0.1, (now - lastFrame) / 1000);
+    const elapsed = lastFrame === undefined ? 0 : Math.max(0, (now - lastFrame) / 1000);
+    const delta = Math.min(0.1, elapsed);
     lastFrame = now;
-    if (!freeze.checked) history.advance(delta, sample);
+    if (!freeze.checked) history.advance(Math.min(HISTORY_SECONDS, elapsed), sample);
     terrain.render(delta, history.phase);
     if (tools.open) {
       updateAudioLabel();
@@ -122,6 +123,9 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
       stopAudio = listenToPlayback((bytes, pts) => audio.push(bytes, pts), () => {
         stopAudio = undefined;
         updateAudioLabel();
+      }, (reason) => {
+        audio.reset();
+        if (reason !== 'pause') history.reset();
       });
     } catch (error) {
       console.warn('[SpectrumTerrain] 无法连接网易云音频', error);

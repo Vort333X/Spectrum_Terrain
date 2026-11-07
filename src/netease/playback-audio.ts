@@ -7,7 +7,11 @@ interface AudioAdapter {
 }
 
 interface AudioSdk {
-  Bridge: { _Adapter: AudioAdapter };
+  Bridge: {
+    _Adapter: AudioAdapter;
+    appendRegisterCall(event: string, scope: string, callback: AudioCallback): boolean;
+    removeRegisterCall(event: string, scope: string, callback: AudioCallback): boolean;
+  };
   AudioPlayer: { setAudioDataEnableState(enabled: boolean): Promise<unknown> };
 }
 
@@ -31,6 +35,8 @@ function getAudioSdk() {
     typeof sdk?.AudioPlayer?.setAudioDataEnableState === 'function' &&
     typeof sdk.Bridge?._Adapter?.registerCallAdapter === 'function' &&
     typeof sdk.Bridge._Adapter._registerCallQueue === 'function' &&
+    typeof sdk.Bridge.appendRegisterCall === 'function' &&
+    typeof sdk.Bridge.removeRegisterCall === 'function' &&
     !!sdk.Bridge._Adapter?.registerCallMap,
   );
 }
@@ -42,10 +48,15 @@ function packetBytes(data: unknown) {
   if (Array.isArray(data)) return Uint8Array.from(data);
 }
 
-export function listenToPlayback(push: (bytes: Uint8Array, pts?: number) => void, onError: () => void) {
+export function listenToPlayback(
+  push: (bytes: Uint8Array, pts?: number) => void,
+  onError: () => void,
+  onDiscontinuity: (reason: 'pause' | 'seek' | 'track') => void,
+) {
   const sdk = getAudioSdk();
   if (!sdk) return;
-  const adapter = sdk.Bridge._Adapter;
+  const bridge = sdk.Bridge;
+  const adapter = bridge._Adapter;
   const player = sdk.AudioPlayer;
   const event = 'audioplayer.onAudioData';
   const register = adapter.registerCallAdapter;
@@ -55,10 +66,30 @@ export function listenToPlayback(push: (bytes: Uint8Array, pts?: number) => void
   let hostEnabled = Array.isArray(callbacks) ? callbacks.length > 0 : !!callbacks;
   let consume: typeof push | undefined = push;
   let stopped = false;
+  let paused = false;
+  let playId: unknown;
+
+  function onPlayState(id: unknown, _requestId: unknown, state: unknown) {
+    if (state !== 1 && state !== 2) return;
+    const changedTrack = playId !== undefined && id !== playId;
+    playId = id;
+    if (changedTrack) onDiscontinuity('track');
+    paused = state === 2;
+    if (paused) onDiscontinuity('pause');
+  }
+
+  function onSeek() {
+    onDiscontinuity('seek');
+  }
+
+  function onEnd() {
+    paused = true;
+    onDiscontinuity('pause');
+  }
 
   function dispatch(...args: unknown[]) {
     forward(...args);
-    if (!consume) return;
+    if (!consume || paused) return;
     const packets = args.length === 1 && Array.isArray(args[0]) ? args[0] as unknown[] : args;
     for (const packet of packets) {
       if (!packet || typeof packet !== 'object' || !('data' in packet)) continue;
@@ -81,6 +112,9 @@ export function listenToPlayback(push: (bytes: Uint8Array, pts?: number) => void
     if (stopped) return;
     stopped = true;
     consume = undefined;
+    bridge.removeRegisterCall('PlayState', 'audioplayer', onPlayState);
+    bridge.removeRegisterCall('Seek', 'audioplayer', onSeek);
+    bridge.removeRegisterCall('End', 'audioplayer', onEnd);
     if (adapter.registerCallAdapter === registerWithTap) {
       adapter.registerCallAdapter = register;
       try {
@@ -100,6 +134,9 @@ export function listenToPlayback(push: (bytes: Uint8Array, pts?: number) => void
   adapter.registerCallAdapter = registerWithTap;
   player.setAudioDataEnableState = keepEnabled;
   try {
+    bridge.appendRegisterCall('PlayState', 'audioplayer', onPlayState);
+    bridge.appendRegisterCall('Seek', 'audioplayer', onSeek);
+    bridge.appendRegisterCall('End', 'audioplayer', onEnd);
     register.call(adapter, event, dispatch, 'websdk');
     void setEnabled.call(player, true).catch(() => {
       if (stopped) return;
