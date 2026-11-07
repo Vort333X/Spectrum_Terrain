@@ -2,6 +2,14 @@
 
 实时三维频谱瀑布图，提供网页与 Wallpaper Engine 壁纸、立体播放页原型和网易云音乐插件。横向从低频排到高频，曲面高度表示相对强度，纵深显示最近 2.5 秒。最前沿的发光线显示当前频谱，可以拖动旋转和滚轮缩放。
 
+当前版本 **0.3.2**，采用 **MIT** 许可证。
+
+[插件安装与使用](docs/网易云插件新手使用说明.md) · [版本记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [许可证](LICENSE) · [第三方组件](THIRD_PARTY_NOTICES.md)
+
+网页端提供系统音频监听、九套渐变配色和效果调试。网易云插件自动接入当前歌曲的音频，以立体专辑封面和透明频谱融入经典播放页。
+
+开发环境使用 Node.js 22 或更高版本。网易云插件适配 Windows 64 位，当前验证的客户端组合为网易云音乐 **3.1.43.205627** 与 BetterNCM **1.3.4**。客户端更新后的兼容性需要重新验证。
+
 源码统一放在 `main` 分支，按使用场景分目录。
 
 | 功能 | 源码目录 | 构建命令 | 生成位置 |
@@ -16,6 +24,8 @@
 ## 浏览器预览
 
 ```powershell
+git clone https://github.com/Vort333X/Spectrum_Terrain.git
+cd Spectrum_Terrain
 npm ci
 npm run build
 ```
@@ -85,3 +95,7 @@ src/
 scripts/     各入口的构建脚本
 docs/        新手使用说明
 ```
+
+修改音频处理后可以运行 `npm run test:audio`，检查包抖动、缓冲积压、暂停、切歌、跳转和监听释放。开发与问题反馈方式见[参与贡献](CONTRIBUTING.md)。
+
+项目代码使用 [MIT 许可证](LICENSE)，版权署名为 Vort333X。Three.js 等组件的许可见[第三方组件说明](THIRD_PARTY_NOTICES.md)，构建产物会附带项目及 Three.js 的许可文件。

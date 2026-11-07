@@ -1,6 +1,19 @@
 {
   "name": "spectrum-terrain",
-  "version": "0.1.0",
+  "version": "0.3.2",
+  "description": "实时三维音频频谱、Wallpaper Engine 壁纸和网易云音乐立体播放页插件。",
+  "license": "MIT",
+  "author": "Vort333X",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Vort333X/Spectrum_Terrain.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vort333X/Spectrum_Terrain/issues"
+  },
   "private": true,
   "type": "module",
   "scripts": {

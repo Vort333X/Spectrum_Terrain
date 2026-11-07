@@ -4,7 +4,7 @@ import { build } from 'esbuild';
 import manifest from '../src/netease/manifest.json' with { type: 'json' };
 
 const output = 'dist-netease';
-const files = ['manifest.json', 'main.js', 'three-LICENSE.txt'];
+const files = ['manifest.json', 'main.js', 'LICENSE.txt', 'three-LICENSE.txt'];
 const archive = `${output}/${manifest.name}-${manifest.version}`;
 const webPage = await readFile('src/web/index.html', 'utf8');
 const effectControls = webPage.match(/<form id="effects">[\s\S]*?<\/form>/)?.[0];
@@ -24,6 +24,7 @@ await Promise.all([
   }),
   copyFile('src/netease/manifest.json', `${output}/manifest.json`),
   copyFile('node_modules/three/LICENSE', `${output}/three-LICENSE.txt`),
+  copyFile('LICENSE', `${output}/LICENSE.txt`),
 ]);
 
 execFileSync('tar.exe', ['-a', '-cf', `${archive}.zip`, '-C', output, ...files], { stdio: 'inherit' });

@@ -15,5 +15,6 @@ await Promise.all([
   copyFile('src/player/index.html', 'dist-player/index.html'),
   copyFile('src/player/style.css', 'dist-player/player.css'),
   copyFile('node_modules/three/LICENSE', 'dist-player/three-LICENSE.txt'),
+  copyFile('LICENSE', 'dist-player/LICENSE.txt'),
 ]);
 console.log('Built dist-player/index.html');
