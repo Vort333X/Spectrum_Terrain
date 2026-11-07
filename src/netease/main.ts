@@ -15,7 +15,6 @@ const COVER = '[data-testid="tid_vinylcover_cover"] img';
 const STAGE_CLASS = 'spectrum-terrain-stage';
 const LAYOUT_CLASS = 'spectrum-terrain-layout';
 const STYLE_ID = 'spectrum-terrain-netease-css';
-const COVER_POLL_MS = 350;
 const COVER_TEXTURE_SIZE = 1024;
 const REFERENCE_EFFECTS = { opacity: 70, trail: 51, glow: 50, radius: 12, gain: 115, smoothing: 50, orbitspeed: 10 };
 
@@ -222,22 +221,87 @@ if (!document.getElementById(STYLE_ID)) {
   document.head.append(style);
   let mounted: ReturnType<typeof mount> | undefined;
   let failedPane: HTMLElement | undefined;
+  let page: HTMLElement | null | undefined;
+  let contentWatching = false;
+  let refreshTimer = 0;
 
-  const refresh = () => {
+  function scheduleRefresh() {
+    if (!refreshTimer) refreshTimer = window.setTimeout(refresh, 0);
+  }
+
+  const visibilityObserver = new MutationObserver(scheduleRefresh);
+  const pageObserver = new MutationObserver(scheduleRefresh);
+  const contentObserver = new MutationObserver((records) => {
+    if (!mounted || !mounted.pane.isConnected || records.some((record) => mounted!.pane.contains(record.target))) {
+      scheduleRefresh();
+    }
+  });
+
+  function onCoverLoaded(event: Event) {
+    if (event.target instanceof HTMLImageElement && event.target.matches(COVER)) scheduleRefresh();
+  }
+
+  function stopWatchingContent() {
+    contentObserver.disconnect();
+    page?.removeEventListener('load', onCoverLoaded, true);
+    contentWatching = false;
+  }
+
+  function bindPage() {
+    const next = document.querySelector<HTMLElement>('#vinyl-page-container');
+    if (next === page) return;
+    stopWatchingContent();
+    visibilityObserver.disconnect();
+    pageObserver.disconnect();
+    mounted?.dispose();
+    mounted = undefined;
+    failedPane = undefined;
+    page = next;
+    if (page) {
+      visibilityObserver.observe(page, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+      pageObserver.observe(page.parentNode!, { childList: true });
+    } else {
+      pageObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  function refresh() {
+    refreshTimer = 0;
+    bindPage();
+    // The client sets display:none after closing the player. Check that first,
+    // so the hidden page never needs periodic layout reads.
+    const pageStyle = page && !document.hidden ? getComputedStyle(page) : undefined;
+    const displayed = pageStyle && pageStyle.display !== 'none' &&
+      pageStyle.visibility === 'visible' && pageStyle.opacity !== '0' && !page!.hidden;
+    const bounds = displayed ? page!.getBoundingClientRect() : undefined;
+    const visible = bounds && bounds.width > 0 && bounds.height > 0 && bounds.right > 0 && bounds.bottom > 0 &&
+      bounds.top < innerHeight && bounds.left < innerWidth;
+    if (!visible) {
+      stopWatchingContent();
+      mounted?.dispose();
+      mounted = undefined;
+      return;
+    }
+    if (!contentWatching) {
+      contentObserver.observe(page!, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['src', 'srcset'],
+      });
+      page!.addEventListener('load', onCoverLoaded, true);
+      contentWatching = true;
+    }
     const layout = document.querySelector<HTMLElement>(LAYOUT);
     const pane = layout?.querySelector<HTMLElement>(':scope > .vinyl');
     const lyrics = layout?.querySelector<HTMLElement>(':scope > .display');
     const image = pane?.querySelector<HTMLImageElement>(COVER);
-    const page = layout?.closest('#vinyl-page-container');
-    const bounds = page?.getBoundingClientRect();
-    const visible = bounds && bounds.width > 0 && bounds.height > 0 && bounds.right > 0 && bounds.bottom > 0 &&
-      bounds.top < innerHeight && bounds.left < innerWidth && getComputedStyle(page!).visibility === 'visible';
-    if (mounted && (document.hidden || !visible || !image ||
+    if (mounted && (!image ||
         layout !== mounted.layout || pane !== mounted.pane || lyrics !== mounted.lyrics)) {
       mounted.dispose();
       mounted = undefined;
     }
-    if (document.hidden || !visible || !layout || !pane || !lyrics || !image || pane === failedPane) return;
+    if (!layout || !pane || !lyrics || !image || pane === failedPane) return;
     try {
       mounted ??= mount(layout, pane, lyrics);
       void mounted.setCover(image);
@@ -245,13 +309,17 @@ if (!document.getElementById(STYLE_ID)) {
       failedPane = pane;
       console.warn('[SpectrumTerrain] 无法创建三维场景', error);
     }
-  };
+  }
 
-  const poll = window.setInterval(refresh, COVER_POLL_MS);
-  document.addEventListener('visibilitychange', refresh);
+  document.addEventListener('visibilitychange', scheduleRefresh);
+  window.addEventListener('resize', scheduleRefresh);
   window.addEventListener('pagehide', () => {
-    clearInterval(poll);
-    document.removeEventListener('visibilitychange', refresh);
+    clearTimeout(refreshTimer);
+    document.removeEventListener('visibilitychange', scheduleRefresh);
+    window.removeEventListener('resize', scheduleRefresh);
+    stopWatchingContent();
+    visibilityObserver.disconnect();
+    pageObserver.disconnect();
     mounted?.dispose();
     style.remove();
   }, { once: true });
