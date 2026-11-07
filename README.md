@@ -21,6 +21,8 @@ npm run build
 
 ## 网易云音乐插件预览
 
+首次安装、升级和调参可以阅读[网易云插件新手使用说明](docs/网易云插件新手使用说明.md)。
+
 Windows 下使用 Node.js 22 及以上版本和系统自带的 `tar.exe`，运行 `npm run build:netease`，在 `dist-netease` 中生成 `SpectrumTerrain-<版本>.plugin`。
 
 1. 安装 [BetterNCM](https://github.com/std-microblock/chromatic/wiki/使用说明)，确认客户端里能打开插件管理器。
