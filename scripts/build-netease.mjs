@@ -6,9 +6,9 @@ import manifest from '../src/netease/manifest.json' with { type: 'json' };
 const output = 'dist-netease';
 const files = ['manifest.json', 'main.js', 'three-LICENSE.txt'];
 const archive = `${output}/${manifest.name}-${manifest.version}`;
-const webPage = await readFile('index.html', 'utf8');
+const webPage = await readFile('src/web/index.html', 'utf8');
 const effectControls = webPage.match(/<form id="effects">[\s\S]*?<\/form>/)?.[0];
-if (!effectControls) throw new Error('Cannot find the shared effect controls in index.html.');
+if (!effectControls) throw new Error('Cannot find the shared effect controls in src/web/index.html.');
 
 await mkdir(output, { recursive: true });
 await Promise.all([

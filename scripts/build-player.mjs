@@ -12,7 +12,7 @@ await Promise.all([
     legalComments: 'inline',
     outfile: 'dist-player/player.js',
   }),
-  copyFile('player.html', 'dist-player/index.html'),
+  copyFile('src/player/index.html', 'dist-player/index.html'),
   copyFile('src/player/style.css', 'dist-player/player.css'),
   copyFile('node_modules/three/LICENSE', 'dist-player/three-LICENSE.txt'),
 ]);

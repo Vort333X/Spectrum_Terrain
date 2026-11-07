@@ -1,4 +1,4 @@
-import { FFT_SIZE, frequencyRanges, readSpectrumBands, SAMPLES_PER_SECOND } from '../audio';
+import { FFT_SIZE, frequencyRanges, readSpectrumBands, SAMPLES_PER_SECOND } from '../shared/audio';
 
 // The client's lyric effects consume interleaved signed 16-bit stereo PCM at 48 kHz.
 const SAMPLE_RATE = 48_000;

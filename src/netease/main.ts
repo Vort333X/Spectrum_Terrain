@@ -1,8 +1,8 @@
-import { SAMPLES_PER_SECOND } from '../audio';
-import { bindEffects } from '../effects';
-import { coverTheme, fitCover } from '../player/artwork';
-import { SpectrumHistory } from '../spectrum-history';
-import { Terrain } from '../terrain';
+import { SAMPLES_PER_SECOND } from '../shared/audio';
+import { bindEffects } from '../shared/effects';
+import { coverTheme, fitCover } from '../shared/artwork';
+import { SpectrumHistory } from '../shared/spectrum-history';
+import { Terrain } from '../shared/terrain';
 import { highResolutionCover, loadCover } from './cover-source';
 import { PcmSpectrum } from './pcm-spectrum';
 import { listenToPlayback } from './playback-audio';

@@ -1,8 +1,8 @@
-import { BANDS, SAMPLES_PER_SECOND, SystemAudioMonitor, testSpectrum, WALLPAPER_BANDS, type TestSignal } from './audio';
-import { Terrain } from './terrain';
-import { DEFAULT_PALETTE, isPalette, PALETTES, type Palette } from './palettes';
-import { bindEffects } from './effects';
-import { SpectrumHistory } from './spectrum-history';
+import { BANDS, SAMPLES_PER_SECOND, SystemAudioMonitor, testSpectrum, WALLPAPER_BANDS, type TestSignal } from '../shared/audio';
+import { Terrain } from '../shared/terrain';
+import { DEFAULT_PALETTE, isPalette, PALETTES, type Palette } from '../shared/palettes';
+import { bindEffects } from '../shared/effects';
+import { SpectrumHistory } from '../shared/spectrum-history';
 
 declare global {
   interface Window {

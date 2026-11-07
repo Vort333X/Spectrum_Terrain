@@ -1,7 +1,7 @@
-import { demoSpectrum, SAMPLES_PER_SECOND, SystemAudioMonitor } from '../audio';
-import { SpectrumHistory } from '../spectrum-history';
-import { Terrain } from '../terrain';
-import { coverTheme, DEMO_TRACKS, demoCover, fitCover } from './artwork';
+import { demoSpectrum, SAMPLES_PER_SECOND, SystemAudioMonitor } from '../shared/audio';
+import { SpectrumHistory } from '../shared/spectrum-history';
+import { Terrain } from '../shared/terrain';
+import { coverTheme, DEMO_TRACKS, demoCover, fitCover } from '../shared/artwork';
 
 function formatTime(seconds: number) {
   const whole = Math.floor(seconds);
