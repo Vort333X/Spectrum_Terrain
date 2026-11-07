@@ -7,13 +7,15 @@ const bundle = await build({
     contents: `
       export { PcmSpectrum } from './src/netease/pcm-spectrum';
       export { listenToPlayback } from './src/netease/playback-audio';
+      export { SpectrumHistory } from './src/shared/spectrum-history';
+      export { Terrain } from './src/shared/terrain';
     `,
   },
   bundle: true,
   format: 'esm',
   write: false,
 });
-const { PcmSpectrum, listenToPlayback } = await import(
+const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64')
 );
 
@@ -39,6 +41,70 @@ function dominantHz(levels) {
 }
 
 try {
+  let analysedRows = 0;
+  let writtenRows = 0;
+  const history = new SpectrumHistory({
+    replaceHistory() {},
+    pushRow() { writtenRows++; },
+  }, 60);
+  const sample = (_time, target) => { analysedRows++; target.fill(0.5); };
+  history.advance(1, sample, 4);
+  assert.ok(analysedRows <= 4, 'A delayed frame caused an unbounded burst of audio analysis.');
+  assert.ok(writtenRows >= 59, 'History stopped following elapsed time during catch-up.');
+  const before = analysedRows;
+  history.advance(1 / 60, sample, 4);
+  assert.equal(analysedRows - before, 1, 'Normal 60 Hz analysis changed.');
+
+  // Exercise the production upload batching without creating a browser context.
+  const terrain = Object.create(Terrain.prototype);
+  const rowBytes = 255 * 4;
+  const rowCount = 152;
+  const uploaded = new Uint8Array(rowBytes * rowCount);
+  let uploads = 0;
+  let lost = false;
+  Object.assign(terrain, {
+    rowBytes: new Uint8Array(rowBytes),
+    historyBytes: new Uint8Array(uploaded.length),
+    filteredRow: new Float32Array(128),
+    heightUniforms: { historyHead: { value: 0 } },
+    rowOffset: { y: 0 },
+    rowTexture: {
+      source: { data: { width: 255, height: 1 } },
+      get image() { return this.source.data; },
+    },
+    heightMap: {},
+    pendingRows: 0,
+    renderer: {
+      getContext: () => ({ isContextLost: () => lost }),
+      copyTextureToTexture(position, source) {
+        uploads++;
+        uploaded.set(source.image.data, position.y * rowBytes);
+      },
+    },
+  });
+  let head = 0;
+  const profile = new Float32Array(128);
+  for (const batchSize of [1, 3, 40, 150, 200]) {
+    uploads = 0;
+    for (let row = 0; row < batchSize; row++) {
+      head = (head + rowCount - 1) % rowCount;
+      profile.fill((row + 1) / (batchSize + 1));
+      terrain.pushRow(head, profile);
+    }
+    assert.equal(uploads, 0, 'History uploaded before the display frame.');
+    terrain.flushHistory();
+    assert.ok(uploads <= 2, 'Ring wrap generated too many GPU uploads.');
+    assert.deepEqual(uploaded, terrain.historyBytes, 'Batched upload corrupted the frequency history.');
+  }
+  lost = true;
+  terrain.pushRow((head + rowCount - 1) % rowCount, profile);
+  terrain.flushHistory();
+  assert.ok(terrain.pendingRows > 0);
+  lost = false;
+  terrain.flushHistory();
+  assert.deepEqual(uploaded, terrain.historyBytes);
+  console.log('PASS: bounded catch-up analysis and exact ring uploads with at most two GPU transfers per frame.');
+
   const audio = new PcmSpectrum();
   const levels = new Float32Array(128);
   const arrivals = [0, 67, 152, 216, 344, 604, 671, 756, 823, 1083];

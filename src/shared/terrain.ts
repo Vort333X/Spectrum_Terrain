@@ -307,6 +307,7 @@ export class Terrain {
   private heightMap = new DataTexture(this.historyBytes, DISPLAY_BANDS, HISTORY_ROWS);
   private rowTexture = new DataTexture(this.rowBytes, DISPLAY_BANDS, 1);
   private rowOffset = new Vector2();
+  private pendingRows = 0;
   private filteredRow = new Float32Array(BANDS);
   private heightUniforms = {
     heightMap: { value: this.heightMap },
@@ -541,6 +542,7 @@ export class Terrain {
   }
 
   replaceHistory(levels: Float32Array) {
+    this.pendingRows = 0;
     for (let row = 0; row < HISTORY_ROWS; row++) {
       this.packRow(this.historyBytes, row * this.rowBytes.length, levels, row * BANDS);
     }
@@ -552,13 +554,28 @@ export class Terrain {
     this.packRow(this.rowBytes, 0, levels, 0);
     this.historyBytes.set(this.rowBytes, row * this.rowBytes.length);
     this.heightUniforms.historyHead.value = row;
-    this.rowOffset.y = row;
-    if (!this.renderer.getContext().isContextLost()) {
-      this.renderer.copyTextureToTexture(this.rowOffset, this.rowTexture, this.heightMap);
-    }
+    this.pendingRows = Math.min(HISTORY_ROWS, this.pendingRows + 1);
+  }
+
+  private flushHistory() {
+    if (!this.pendingRows || this.renderer.getContext().isContextLost()) return;
+    const head = this.heightUniforms.historyHead.value;
+    const firstRows = Math.min(this.pendingRows, HISTORY_ROWS - head);
+    this.uploadRows(head, firstRows);
+    if (this.pendingRows > firstRows) this.uploadRows(0, this.pendingRows - firstRows);
+    this.pendingRows = 0;
+  }
+
+  private uploadRows(start: number, count: number) {
+    this.rowOffset.y = start;
+    const image: { data: Uint8Array; height: number } = this.rowTexture.source.data;
+    image.height = count;
+    image.data = this.historyBytes.subarray(start * this.rowBytes.length, (start + count) * this.rowBytes.length);
+    this.renderer.copyTextureToTexture(this.rowOffset, this.rowTexture, this.heightMap);
   }
 
   render(delta: number, phase: number) {
+    this.flushHistory();
     // The r147 controls advance auto-rotation once per update.
     // Compensate for differing display refresh rates.
     this.controls.autoRotateSpeed = this.orbitSpeed / 6 * delta * 60;

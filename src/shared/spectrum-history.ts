@@ -31,10 +31,16 @@ export class SpectrumHistory {
     this.terrain.replaceHistory(rows);
   }
 
-  advance(delta: number, sample: SpectrumSampler) {
+  advance(delta: number, sample: SpectrumSampler, maxSamples = Infinity) {
     this.carry += delta;
+    let remaining = Math.floor(this.carry / this.step);
+    let first = true;
     while (this.carry >= this.step) {
-      sample(this.time, this.target);
+      // Missing display frames cannot recover old live audio. Reuse the current
+      // profile for older rows and reserve fresh analysis for the newest rows.
+      if (first || remaining < maxSamples) sample(this.time, this.target);
+      first = false;
+      remaining--;
       for (let band = 0; band < BANDS; band++) {
         const value = this.target[band];
         const response = value > this.smoothed[band] ? 0.90 : 0.50;

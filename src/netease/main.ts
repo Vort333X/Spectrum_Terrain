@@ -92,7 +92,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     const elapsed = lastFrame === undefined ? 0 : Math.max(0, (now - lastFrame) / 1000);
     const delta = Math.min(0.1, elapsed);
     lastFrame = now;
-    if (!freeze.checked) history.advance(Math.min(HISTORY_SECONDS, elapsed), sample);
+    if (!freeze.checked) history.advance(Math.min(HISTORY_SECONDS, elapsed), sample, 4);
     terrain.render(delta, history.phase);
     if (tools.open) {
       updateAudioLabel();
