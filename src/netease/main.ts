@@ -6,6 +6,7 @@ import { Terrain } from '../shared/terrain';
 import { highResolutionCover, loadCover } from './cover-source';
 import { PlaybackSpectrum } from './playback-spectrum';
 import { listenToPlayback } from './playback-audio';
+import { DEFAULT_FRAME_LIMIT, FRAME_LIMIT_KEY, FrameLimit } from './frame-limit';
 import css from './style.css';
 
 declare const NETEASE_EFFECT_CONTROLS: string;
@@ -16,7 +17,7 @@ const STAGE_CLASS = 'spectrum-terrain-stage';
 const LAYOUT_CLASS = 'spectrum-terrain-layout';
 const STYLE_ID = 'spectrum-terrain-netease-css';
 const COVER_TEXTURE_SIZE = 1024;
-const REFERENCE_EFFECTS = { opacity: 70, trail: 51, glow: 50, radius: 12, gain: 115, smoothing: 50, orbitspeed: 10 };
+const REFERENCE_EFFECTS = { opacity: 70, trail: 51, glow: 50, radius: 12, gain: 115, smoothing: 50 };
 
 function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   const stage = document.createElement('div');
@@ -32,9 +33,12 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
       <div class="spectrum-terrain-meta"><span data-audio role="status">等待播放音频</span><output data-fps>— FPS</output></div>
       <div class="spectrum-terrain-meta"><span>频谱分析</span><output data-analysis></output></div>
       <div class="spectrum-terrain-actions">
-        <button type="button" data-orbit aria-pressed="false">自动绕转</button>
         <button type="button" data-reset-view>复位视角</button>
       </div>
+      <label class="spectrum-terrain-meta" for="spectrum-terrain-fps-limit">帧率上限
+        <input id="spectrum-terrain-fps-limit" data-fps-limit type="number" min="0" max="240" step="1" value="60" aria-describedby="spectrum-terrain-fps-help">
+      </label>
+      <p id="spectrum-terrain-fps-help" class="spectrum-terrain-help">1–240 FPS，0 表示不限帧</p>
       ${NETEASE_EFFECT_CONTROLS}
     </div>`;
   stage.append(axes, tools);
@@ -65,21 +69,36 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   for (const [name, value] of Object.entries(REFERENCE_EFFECTS)) {
     (form.elements.namedItem(name) as HTMLInputElement).defaultValue = String(value);
   }
-  bindEffects(form, (settings) => terrain.applyEffects(settings), true);
+  bindEffects(form, (settings) => terrain.applyEffects({ ...settings, orbitspeed: 0 }), true);
+  terrain.autoRotate = false;
+  const frameLimit = new FrameLimit();
+  try {
+    const stored = localStorage.getItem(FRAME_LIMIT_KEY);
+    frameLimit.fps = stored?.trim() ? Number(stored) : DEFAULT_FRAME_LIMIT;
+  } catch {
+    // Keep the default when storage is unavailable.
+  }
+  const fpsInput = tools.querySelector<HTMLInputElement>('[data-fps-limit]')!;
+  fpsInput.value = String(frameLimit.fps);
+  fpsInput.addEventListener('change', () => {
+    frameLimit.fps = fpsInput.valueAsNumber;
+    fpsInput.value = String(frameLimit.fps);
+    fpsSince = renderedFrames = 0;
+    try {
+      localStorage.setItem(FRAME_LIMIT_KEY, String(frameLimit.fps));
+    } catch {
+      // The limit still works for this session.
+    }
+  });
   const history = new SpectrumHistory(terrain, SAMPLES_PER_SECOND);
   const audio = new PlaybackSpectrum();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const freeze = tools.querySelector<HTMLInputElement>('#spectrum-terrain-freeze')!;
-  const orbit = tools.querySelector<HTMLButtonElement>('[data-orbit]')!;
   const audioLabel = tools.querySelector<HTMLElement>('[data-audio]')!;
   const fpsLabel = tools.querySelector<HTMLOutputElement>('[data-fps]')!;
   const analysisLabel = tools.querySelector<HTMLOutputElement>('[data-analysis]')!;
   const sample = (_time: number, levels: Float32Array) => audio.sample(levels);
   history.reset();
-  orbit.addEventListener('click', () => {
-    terrain.autoRotate = !terrain.autoRotate;
-    orbit.setAttribute('aria-pressed', String(terrain.autoRotate));
-  });
   tools.querySelector('[data-reset-view]')!.addEventListener('click', () => terrain.resetCamera());
   const canvas = stage.querySelector('canvas')!;
   let frameId = 0;
@@ -91,6 +110,10 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   let renderedFrames = 0;
 
   function frame(now: number) {
+    if (!frameLimit.due(now)) {
+      frameId = requestAnimationFrame(frame);
+      return;
+    }
     const elapsed = lastFrame === undefined ? 0 : Math.max(0, (now - lastFrame) / 1000);
     const delta = Math.min(0.1, elapsed);
     lastFrame = now;
@@ -98,8 +121,8 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     terrain.render(delta, history.phase);
     if (tools.open) {
       updateAudioLabel();
-      fpsSince ||= now;
-      renderedFrames++;
+      if (!fpsSince) fpsSince = now;
+      else renderedFrames++;
       if (now - fpsSince >= 600) {
         fpsLabel.value = `${Math.round(renderedFrames * 1000 / (now - fpsSince))} FPS`;
         renderedFrames = 0;
@@ -116,6 +139,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
 
   function updateAudioLabel() {
     if (analysisLabel.value !== audio.mode) analysisLabel.value = audio.mode;
+    if (analysisLabel.title !== audio.diagnostic) analysisLabel.title = audio.diagnostic;
     const label = !stopAudio ? '客户端音频不可用' : audio.active ? '网易云实时音频' : '等待播放音频';
     if (audioLabel.textContent !== label) audioLabel.textContent = label;
   }
@@ -140,6 +164,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     cancelAnimationFrame(frameId);
     frameId = 0;
     lastFrame = undefined;
+    frameLimit.reset();
     stopAudio?.();
     stopAudio = undefined;
     audio.reset();

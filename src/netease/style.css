@@ -103,8 +103,20 @@
   cursor: pointer;
 }
 
-.spectrum-terrain-panel button[aria-pressed="true"] {
-  border-color: var(--spectrum-accent, #c8c3ce);
+.spectrum-terrain-panel input[type="number"] {
+  box-sizing: border-box;
+  width: 74px;
+  border: 1px solid #ffffff26;
+  border-radius: 5px;
+  padding: 3px 6px;
+  color: inherit;
+  background: #ffffff14;
+}
+
+.spectrum-terrain-help {
+  margin: -4px 0 10px;
+  color: #c8c3ce;
+  font-size: 11px;
 }
 
 .spectrum-terrain-panel .effect-check {

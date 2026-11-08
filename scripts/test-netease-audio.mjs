@@ -10,6 +10,7 @@ const bundle = await build({
       export { SpectrumHistory } from './src/shared/spectrum-history';
       export { Terrain } from './src/shared/terrain';
       export { PlaybackSpectrum } from './src/netease/playback-spectrum';
+      export { FrameLimit, normalizeFrameLimit } from './src/netease/frame-limit';
     `,
   },
   bundle: true,
@@ -17,7 +18,7 @@ const bundle = await build({
   define: { AUDIO_WORKER_SOURCE: JSON.stringify('/* controlled worker test */') },
   write: false,
 });
-const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum } = await import(
+const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum, FrameLimit, normalizeFrameLimit } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64')
 );
 
@@ -44,6 +45,26 @@ function dominantHz(levels) {
 }
 
 try {
+  for (const displayRate of [60, 120, 144, 240]) {
+    for (const cap of [0, 24, 30, 50, 60, 90, 144, 240]) {
+      const limiter = new FrameLimit();
+      limiter.fps = cap;
+      let count = 0;
+      for (let tick = 0; tick < displayRate * 10; tick++) {
+        if (limiter.due(tick * 1000 / displayRate)) count++;
+      }
+      assert.ok(Math.abs(count - Math.min(displayRate, cap || displayRate) * 10) <= 1,
+        `Incorrect frame pacing for ${cap} FPS on a ${displayRate} Hz display: ${count}`);
+      assert.ok(limiter.due(20_000), 'A delayed frame did not resume rendering.');
+      if (cap) assert.equal(limiter.due(20_000.01), false, 'A stall triggered an immediate catch-up render.');
+      limiter.fps = 30;
+      assert.ok(limiter.due(20_001), 'Changing the cap did not reset the schedule.');
+    }
+  }
+  assert.equal(normalizeFrameLimit(NaN), 60);
+  assert.equal(normalizeFrameLimit(-10), 0);
+  assert.equal(normalizeFrameLimit(999), 240);
+  console.log('PASS: custom FPS caps across 60/120/144/240 Hz, unlimited mode, runtime changes and stall recovery.');
   let analysedRows = 0;
   let writtenRows = 0;
   const history = new SpectrumHistory({
@@ -225,7 +246,7 @@ try {
   globalThis.Worker = class {
     messages = [];
     terminated = false;
-    constructor() { workers.push(this); }
+    constructor(url) { this.url = url; workers.push(this); }
     postMessage(message, transfer = []) {
       this.messages.push(structuredClone(message, { transfer }));
     }
@@ -256,6 +277,21 @@ try {
   assert.equal(background.active, false);
   background.sample(levels);
   assert.ok(levels.every((value) => value === 0));
+
+  const retry = new PlaybackSpectrum();
+  const blobWorker = workers.at(-1);
+  retry.push(sharedBytes, 0);
+  blobWorker.onerror({ preventDefault() {}, message: 'Blob scheme unavailable' });
+  const dataWorker = workers.at(-1);
+  assert.ok(blobWorker.terminated);
+  assert.match(dataWorker.url, /^data:text\/javascript/);
+  assert.equal(dataWorker.messages[0].type, 'pcm', 'Retry discarded the newest live packet.');
+  dataWorker.emit({ type: 'ready' });
+  assert.equal(retry.mode, '后台线程');
+  blobWorker.onerror({ preventDefault() {}, message: 'Late error' });
+  assert.equal(dataWorker.terminated, false, 'A stale worker error terminated the replacement.');
+  assert.match(retry.diagnostic, /Blob scheme unavailable/);
+  retry.dispose();
 
   globalThis.Worker = class { constructor() { throw new Error('Worker blocked'); } };
   const fallback = new PlaybackSpectrum();

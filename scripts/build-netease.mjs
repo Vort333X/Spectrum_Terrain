@@ -27,7 +27,9 @@ await Promise.all([
     format: 'iife',
     loader: { '.css': 'text' },
     define: {
-      NETEASE_EFFECT_CONTROLS: JSON.stringify(effectControls.replace(/\b(id|for)="/g, '$1="spectrum-terrain-')),
+      NETEASE_EFFECT_CONTROLS: JSON.stringify(effectControls
+        .replace(/<label\b[^>]*>(?:(?!<\/label>)[\s\S])*name="orbitspeed"[\s\S]*?<\/label>/, '')
+        .replace(/\b(id|for)="/g, '$1="spectrum-terrain-')),
       AUDIO_WORKER_SOURCE: JSON.stringify(worker.outputFiles[0].text),
     },
     target: 'chrome91',

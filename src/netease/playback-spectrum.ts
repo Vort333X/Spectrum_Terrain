@@ -17,28 +17,56 @@ export class PlaybackSpectrum {
   private lastBytes?: Uint8Array;
   private lastPts?: number;
   private closed = false;
+  private workerKind: 'blob' | 'data' = 'blob';
+  private workerReady = false;
+  private failure = '';
 
   constructor() {
+    this.startWorker('blob');
+  }
+
+  private startWorker(kind: 'blob' | 'data') {
+    this.worker?.terminate();
+    this.worker = undefined;
+    this.releaseStartup();
+    this.workerKind = kind;
+    this.workerReady = false;
+    this.requestId++;
+    this.pending = false;
+    this.pendingSteps = 0;
     try {
-      this.workerUrl = URL.createObjectURL(new Blob([AUDIO_WORKER_SOURCE], { type: 'text/javascript' }));
-      const worker = new Worker(this.workerUrl);
+      // CEF custom-scheme pages may reject blob workers. A self-contained data
+      // worker also has an opaque origin and needs no remote script or server.
+      const url = kind === 'data'
+        ? `data:text/javascript;charset=utf-8,${encodeURIComponent(AUDIO_WORKER_SOURCE)}`
+        : (this.workerUrl = URL.createObjectURL(new Blob([AUDIO_WORKER_SOURCE], { type: 'text/javascript' })));
+      const worker = new Worker(url);
       this.worker = worker;
       worker.onmessage = ({ data }) => {
         if (this.closed || this.worker !== worker) return;
-        if (data.type === 'ready') this.releaseStartup();
+        if (data.type === 'ready') {
+          this.workerReady = true;
+          this.releaseStartup();
+        }
         if (data.type === 'spectrum' && data.id === this.requestId) {
           this.pending = false;
           this.levels.set(data.levels);
         }
       };
       worker.onerror = (event) => {
+        if (this.closed || this.worker !== worker) return;
         event.preventDefault();
-        this.useFallback();
+        this.workerFailed(event.message || 'Worker 加载失败');
       };
-      worker.onmessageerror = () => this.useFallback();
-      this.startupTimer = window.setTimeout(() => this.useFallback(), 1500);
-    } catch {
-      this.useFallback();
+      worker.onmessageerror = () => {
+        if (this.worker === worker) this.workerFailed('Worker 消息无法解码');
+      };
+      this.startupTimer = window.setTimeout(() => {
+        if (this.worker === worker) this.workerFailed('Worker 启动超时');
+      }, 1500);
+      if (this.lastBytes) this.sendPcm(this.lastBytes, this.lastPts);
+    } catch (error) {
+      this.workerFailed(error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -47,7 +75,11 @@ export class PlaybackSpectrum {
   }
 
   get mode() {
-    return this.worker ? '后台线程' : '兼容方式';
+    return this.worker ? this.workerReady ? '后台线程' : '启动中' : '兼容方式';
+  }
+
+  get diagnostic() {
+    return this.failure;
   }
 
   push(bytes: Uint8Array, pts?: number) {
@@ -57,13 +89,7 @@ export class PlaybackSpectrum {
     this.lastBytes = bytes;
     this.lastPts = pts;
     if (this.worker) {
-      // Native lyric effects may retain the original packet. Transfer a copy.
-      const copy = bytes.slice();
-      try {
-        this.worker.postMessage({ type: 'pcm', bytes: copy, pts }, [copy.buffer]);
-      } catch {
-        this.useFallback();
-      }
+      this.sendPcm(bytes, pts);
     } else {
       this.fallback!.push(bytes, pts);
     }
@@ -74,7 +100,7 @@ export class PlaybackSpectrum {
       target.fill(0);
       return;
     }
-    if (this.pending && performance.now() - this.requestedAt > 1000) this.useFallback();
+    if (this.pending && performance.now() - this.requestedAt > 1000) this.workerFailed('Worker 分析响应超时');
     if (this.fallback) {
       this.fallback.sample(target);
       return;
@@ -87,8 +113,8 @@ export class PlaybackSpectrum {
       try {
         this.worker!.postMessage({ type: 'sample', id: ++this.requestId, steps: this.pendingSteps });
         this.pendingSteps = 0;
-      } catch {
-        this.useFallback();
+      } catch (error) {
+        this.workerFailed(error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -105,8 +131,8 @@ export class PlaybackSpectrum {
     if (this.worker) {
       try {
         this.worker.postMessage({ type: 'reset' });
-      } catch {
-        this.useFallback();
+      } catch (error) {
+        this.workerFailed(error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -124,6 +150,27 @@ export class PlaybackSpectrum {
     clearTimeout(this.startupTimer);
     if (this.workerUrl) URL.revokeObjectURL(this.workerUrl);
     this.workerUrl = undefined;
+  }
+
+  private sendPcm(bytes: Uint8Array, pts?: number) {
+    // Native lyric effects may retain the original packet. Transfer a copy.
+    const copy = bytes.slice();
+    try {
+      this.worker!.postMessage({ type: 'pcm', bytes: copy, pts }, [copy.buffer]);
+    } catch (error) {
+      this.workerFailed(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private workerFailed(reason: string) {
+    if (this.closed || this.fallback) return;
+    this.failure = `${this.workerKind}: ${reason}`;
+    console.warn('[SpectrumTerrain] 后台分析', this.failure);
+    if (this.workerKind === 'blob') {
+      this.startWorker('data');
+      return;
+    }
+    this.useFallback();
   }
 
   private useFallback() {
