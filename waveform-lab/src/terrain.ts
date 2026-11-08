@@ -487,10 +487,10 @@ export class Terrain {
   setDisplay(options: DisplayOptions) {
     this.appearanceUniform.value = { glass: 0, solid: 1, neon: 2 }[options.appearance];
     this.surface.visible = options.shape === 'terrain';
-    this.bars.mesh.visible = options.shape === 'bars';
+    this.bars.mesh.visible = options.shape === 'bars' || options.shape === 'fins';
     this.ridges.visible = options.shape === 'ridges';
     this.ridgeDepth.visible = options.shape === 'ridges';
-    this.bars.configure(options.columns, options.gap);
+    if (this.bars.mesh.visible) this.bars.configure(options.columns, options.gap, options.shape === 'fins');
   }
 
   setColors(colors: SpectrumColors, duration = 0) {

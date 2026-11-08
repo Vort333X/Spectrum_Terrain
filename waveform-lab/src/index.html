@@ -33,10 +33,10 @@
       <label class="test-source" for="shape">形态 <select id="shape" aria-describedby="shape-hint"></select></label>
       <label class="test-source" for="appearance">显示风格 <select id="appearance"></select></label>
       <div id="bar-controls">
-        <label class="test-source" for="columns">柱体数量
+        <label class="test-source" for="columns"><span id="columns-label">柱体数量</span>
           <select id="columns"><option value="32">32 柱</option><option value="64">64 柱</option><option value="128">128 柱</option></select>
         </label>
-        <label class="effect-range" for="bar-gap">柱体间隙 <output id="bar-gap-value" class="effect-value"></output>
+        <label class="effect-range" for="bar-gap"><span id="gap-label">柱体间隙</span> <output id="bar-gap-value" class="effect-value"></output>
           <input type="range" id="bar-gap" min="5" max="65" step="1" value="28">
         </label>
       </div>

@@ -43,6 +43,8 @@ function start() {
   const gapInput = document.querySelector<HTMLInputElement>('#bar-gap')!;
   const gapValue = document.querySelector<HTMLOutputElement>('#bar-gap-value')!;
   const barControls = document.querySelector<HTMLElement>('#bar-controls')!;
+  const columnsLabel = document.querySelector<HTMLElement>('#columns-label')!;
+  const gapLabel = document.querySelector<HTMLElement>('#gap-label')!;
   const shapeHint = document.querySelector<HTMLElement>('#shape-hint')!;
   const styleStats = document.querySelector<HTMLElement>('#style-stats')!;
   for (const [key, option] of Object.entries(SHAPES)) shapeSelect.add(new Option(option.label, key));
@@ -62,10 +64,15 @@ function start() {
       columns: Number(columnsSelect.value), gap: gapInput.valueAsNumber,
     });
     terrain.setDisplay(options);
-    barControls.hidden = options.shape !== 'bars';
+    const fins = options.shape === 'fins';
+    barControls.hidden = options.shape !== 'bars' && !fins;
+    columnsLabel.textContent = fins ? '鳍片数量' : '柱体数量';
+    gapLabel.textContent = fins ? '片间缝隙' : '柱体间隙';
+    for (const option of Array.from(columnsSelect.options)) option.textContent = `${option.value} ${fins ? '片' : '柱'}`;
     shapeHint.textContent = SHAPES[options.shape].hint;
     gapValue.value = `${options.gap}%`;
-    styleStats.textContent = options.shape === 'bars' ? `${options.columns} 频段柱 × ${BAR_ROWS} 历史层 · 2.5 秒`
+    styleStats.textContent = fins ? `${options.columns} 片玻璃鳍片 · 2.5 秒历史`
+      : options.shape === 'bars' ? `${options.columns} 频段柱 × ${BAR_ROWS} 历史层 · 2.5 秒`
       : options.shape === 'ridges' ? `${RIDGE_ROWS} 层光带 · 2.5 秒历史` : '255 曲面列 · 2.5 秒历史';
     if (persist && !isWallpaper) {
       try { localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(options)); } catch { /* Controls still work. */ }

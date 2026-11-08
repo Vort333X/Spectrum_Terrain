@@ -6,6 +6,7 @@ import { BANDS } from './audio';
 
 export const BAR_ROWS = 36;
 export const RIDGE_ROWS = 64;
+export const FIN_SEGMENTS = 75;
 
 interface StyleContext {
   uniforms: ShaderMaterial['uniforms'];
@@ -39,11 +40,13 @@ export class FrequencyBars {
   readonly mesh: Mesh<InstancedBufferGeometry, ShaderMaterial>;
   readonly frontTrace: Mesh<InstancedBufferGeometry, ShaderMaterial>;
   private columns = 0;
+  private connected = false;
 
   constructor(private context: StyleContext) {
     const uniforms = {
       ...context.uniforms,
       barWidth: { value: 1 }, barDepth: { value: 1 }, bandsPerBar: { value: 2 },
+      finMode: { value: 0 },
     };
     const sampleBar = `
       uniform float bandsPerBar;
@@ -69,16 +72,18 @@ export class FrequencyBars {
       attribute float barAge;
       uniform float barWidth;
       uniform float barDepth;
+      uniform float finMode;
       varying vec3 vLocal;
       varying vec3 vFace;
       varying float vAge;
       varying float vPeak;
       ${sampleBar}
       void main() {
-        float height = max(0.002, barLevel(barBand, barAge));
+        float age = mix(barAge, 0.5 - position.z, finMode);
+        float height = max(0.002, barLevel(barBand, age));
         vLocal = position + 0.5;
         vFace = normal;
-        vAge = barAge;
+        vAge = age;
         vPeak = height / ${context.height.toFixed(1)};
         vec3 point = vec3(barCenter.x + position.x * barWidth, vLocal.y * height, barCenter.y + position.z * barDepth);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(point, 1.0);
@@ -92,6 +97,7 @@ export class FrequencyBars {
       uniform float glowStrength;
       uniform float glowRadius;
       uniform float displayStyle;
+      uniform float finMode;
       varying vec3 vLocal;
       varying vec3 vFace;
       varying float vAge;
@@ -110,8 +116,14 @@ export class FrequencyBars {
         float fade = mix(1.0, trailOpacity, smoothstep(0.0, 1.0, vAge));
         float alpha = surfaceOpacity * fade;
         if (displayStyle < 0.5) {
-          color = mix(color * light, highColor, edge * glowStrength * 0.48);
-          alpha *= 0.35 + 0.38 * vPeak + 0.25 * edge;
+          if (finMode > 0.5) {
+            float rim = 1.0 - smoothstep(pixel.y * 0.25, pixel.y * 1.8, 1.0 - vLocal.y);
+            color = mix(color * light, highColor, rim * glowStrength * 0.32);
+            alpha *= 0.16 + 0.30 * vPeak + 0.20 * rim;
+          } else {
+            color = mix(color * light, highColor, edge * glowStrength * 0.48);
+            alpha *= 0.35 + 0.38 * vPeak + 0.25 * edge;
+          }
         } else if (displayStyle < 1.5) {
           color *= light + 0.18;
           alpha *= 0.90;
@@ -193,24 +205,26 @@ export class FrequencyBars {
     this.configure(64, 28);
   }
 
-  configure(columns: number, gap: number) {
+  configure(columns: number, gap: number, connected = false) {
     const { width, depth } = this.context;
     const fill = 1 - gap / 100;
     this.mesh.material.uniforms.barWidth.value = width / columns * fill;
-    this.mesh.material.uniforms.barDepth.value = depth / BAR_ROWS * fill;
+    this.mesh.material.uniforms.barDepth.value = connected ? depth : depth / BAR_ROWS * fill;
     this.mesh.material.uniforms.bandsPerBar.value = BANDS / columns;
-    if (this.columns === columns) return;
+    this.mesh.material.uniforms.finMode.value = connected ? 1 : 0;
+    if (this.columns === columns && this.connected === connected) return;
     this.columns = columns;
-    const geometry = instanced(new BoxGeometry(1, 1, 1));
-    const count = columns * BAR_ROWS;
+    this.connected = connected;
+    const geometry = instanced(new BoxGeometry(1, 1, 1, 1, 1, connected ? FIN_SEGMENTS : 1));
+    const count = columns * (connected ? 1 : BAR_ROWS);
     const centers = new Float32Array(count * 2);
     const bands = new Float32Array(count);
     const ages = new Float32Array(count);
     // Draw old rows first for alpha blending. All columns share one draw call.
     for (let instance = 0; instance < count; instance++) {
-      const row = BAR_ROWS - 1 - Math.floor(instance / columns);
+      const row = connected ? 0 : BAR_ROWS - 1 - Math.floor(instance / columns);
       const column = instance % columns;
-      centers.set([-width / 2 + (column + 0.5) * width / columns, depth / 2 - (row + 0.5) * depth / BAR_ROWS], instance * 2);
+      centers.set([-width / 2 + (column + 0.5) * width / columns, connected ? 0 : depth / 2 - (row + 0.5) * depth / BAR_ROWS], instance * 2);
       bands[instance] = column * BANDS / columns * 2 + BANDS / columns - 1;
       ages[instance] = row / (BAR_ROWS - 1);
     }

@@ -10,7 +10,7 @@ const bundle = await build({
   },
   bundle: true, format: 'esm', write: false,
 });
-const { DEFAULT_DISPLAY, readDisplayOptions, FrequencyBars, createRidges, BAR_ROWS, RIDGE_ROWS } = await import(
+const { DEFAULT_DISPLAY, readDisplayOptions, FrequencyBars, createRidges, BAR_ROWS, RIDGE_ROWS, FIN_SEGMENTS } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64'),
 );
 
@@ -19,6 +19,7 @@ assert.deepEqual(readDisplayOptions({ shape: '__proto__', appearance: 'unknown',
 assert.equal(readDisplayOptions({ gap: -10 }).gap, 5);
 assert.equal(readDisplayOptions({ gap: 100 }).gap, 65);
 assert.equal(readDisplayOptions({ shape: 'ridges', appearance: 'neon', columns: 128 }).shape, 'ridges');
+assert.equal(readDisplayOptions({ shape: 'fins' }).shape, 'fins');
 
 const context = { uniforms: {}, sampleShader: '', width: 14, depth: 7.8, height: 3.2 };
 const bars = new FrequencyBars(context);
@@ -64,6 +65,29 @@ for (const columns of [32, 64, 128]) {
   assert.ok(disposed, 'Changing density leaked the old geometry.');
   assert.ok(frontDisposed, 'Changing density leaked the front highlights.');
 }
+for (const columns of [32, 64, 128]) {
+  bars.configure(columns, 45, true);
+  const geometry = bars.mesh.geometry;
+  assert.equal(geometry.instanceCount, columns, 'Fins should connect time samples rather than instantiate a bar per history row.');
+  assert.equal(bars.frontTrace.geometry.instanceCount, columns);
+  assert.equal(bars.mesh.material.uniforms.barDepth.value, context.depth);
+  assert.equal(bars.mesh.material.uniforms.finMode.value, 1);
+  const position = geometry.getAttribute('position');
+  const ages = new Set();
+  for (let index = 0; index < position.count; index++) ages.add(Math.round((0.5 - position.getZ(index)) * FIN_SEGMENTS));
+  assert.deepEqual([...ages].sort((left, right) => left - right), Array.from({ length: FIN_SEGMENTS + 1 }, (_, index) => index),
+    'A fin has gaps in its history profile.');
+  const centers = geometry.getAttribute('barCenter');
+  for (let index = 0; index < centers.count; index++) assert.equal(centers.getY(index), 0);
+  bars.configure(columns, 28, true);
+  assert.equal(bars.mesh.geometry, geometry, 'Changing fin spacing unnecessarily replaced its history geometry.');
+  let disposed = false;
+  geometry.addEventListener('dispose', () => { disposed = true; });
+  bars.configure(columns, 28, false);
+  assert.ok(disposed, 'Switching back to bars leaked the fin geometry.');
+  assert.equal(bars.mesh.geometry.instanceCount, columns * BAR_ROWS);
+  assert.equal(bars.mesh.material.uniforms.finMode.value, 0);
+}
 const ridges = createRidges(context);
 assert.equal(ridges.geometry.instanceCount, RIDGE_ROWS);
 const ages = ridges.geometry.getAttribute('ridgeAge');
@@ -73,4 +97,4 @@ for (const mesh of [bars.mesh, bars.frontTrace, ridges]) {
   mesh.geometry.dispose();
   mesh.material.dispose();
 }
-console.log('PASS: validated display options, full frequency coverage, bounded instancing, history order and geometry cleanup.');
+console.log('PASS: display options, frequency coverage, continuous fin history, bounded instancing and geometry cleanup.');
