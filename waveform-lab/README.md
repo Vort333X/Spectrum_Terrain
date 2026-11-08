@@ -68,6 +68,6 @@ waveform-lab/
 
 绘制、音频、历史和效果代码均是本目录的独立副本，不引用 `src/shared`。试验参数使用 `spectrum-terrain-lab-effects` 和 `spectrum-terrain-lab-display` 保存，与原网页及插件参数分开。
 
-新样式的源码先放在本目录中，完成效果、性能和切换验证后，再选择性接入正式入口。网易云插件仍从 `src/netease` 和 `src/shared` 构建，原网页与 Wallpaper Engine 入口仍为 `src/web`。
+这四种形态已接入 0.4.0 网易云插件，正式实现放在 `src/shared`，试验副本继续独立。后续新样式的源码仍先放在本目录中，验证后再选择性接入正式入口。网易云插件仍从 `src/netease` 和 `src/shared` 构建，原网页与 Wallpaper Engine 入口仍为 `src/web`。
 
 本目录源码遵循仓库根目录的 [MIT 许可证](../LICENSE)。

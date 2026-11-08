@@ -28,6 +28,7 @@ await Promise.all([
     loader: { '.css': 'text' },
     define: {
       NETEASE_EFFECT_CONTROLS: JSON.stringify(effectControls
+        .replace('曲面不透明度', '图形不透明度')
         .replace(/<label\b[^>]*>(?:(?!<\/label>)[\s\S])*name="orbitspeed"[\s\S]*?<\/label>/, '')
         .replace(/\b(id|for)="/g, '$1="spectrum-terrain-')),
       AUDIO_WORKER_SOURCE: JSON.stringify(worker.outputFiles[0].text),

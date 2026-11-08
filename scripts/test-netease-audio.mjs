@@ -12,6 +12,8 @@ const bundle = await build({
       export { Terrain } from './src/shared/terrain';
       export { PlaybackSpectrum, summarizeWorkerError } from './src/netease/playback-spectrum';
       export { FrameLimit, normalizeFrameLimit } from './src/netease/frame-limit';
+      export { DEFAULT_DISPLAY, readDisplayOptions, SHAPES } from './src/shared/display-options';
+      export { FrequencyBars, BAR_ROWS } from './src/shared/spectrum-styles';
     `,
   },
   bundle: true,
@@ -19,7 +21,8 @@ const bundle = await build({
   define: { AUDIO_WORKER_SOURCE: JSON.stringify('/* controlled worker test */') },
   write: false,
 });
-const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum, FrameLimit, normalizeFrameLimit, summarizeWorkerError } = await import(
+const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum, FrameLimit, normalizeFrameLimit, summarizeWorkerError,
+  DEFAULT_DISPLAY, readDisplayOptions, SHAPES, FrequencyBars, BAR_ROWS } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64')
 );
 
@@ -46,6 +49,21 @@ function dominantHz(levels) {
 }
 
 try {
+  assert.equal(DEFAULT_DISPLAY.shape, 'terrain', 'The existing player must keep its default terrain.');
+  assert.equal(DEFAULT_DISPLAY.appearance, 'glass');
+  assert.deepEqual(readDisplayOptions({ shape: 'unknown', appearance: 'unknown', columns: 0, gap: NaN }), DEFAULT_DISPLAY);
+  for (const shape of Object.keys(SHAPES)) assert.equal(readDisplayOptions({ shape }).shape, shape);
+  const styleBars = new FrequencyBars({ uniforms: {}, sampleShader: '', width: 14, depth: 7.8, height: 3.2 });
+  for (const connected of [true, false, true, false]) {
+    styleBars.configure(32, 45, connected);
+    assert.equal(styleBars.mesh.geometry.instanceCount, 32 * (connected ? 1 : BAR_ROWS));
+    assert.equal(styleBars.frontTrace.geometry.instanceCount, 32);
+  }
+  for (const mesh of [styleBars.mesh, styleBars.frontTrace]) {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  console.log('PASS: native defaults, saved style validation and bounded bar/fin geometry.');
   for (const displayRate of [60, 120, 144, 240]) {
     for (const cap of [0, 24, 30, 50, 60, 90, 144, 240]) {
       const limiter = new FrameLimit();

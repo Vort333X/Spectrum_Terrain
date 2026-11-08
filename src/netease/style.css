@@ -113,6 +113,38 @@
   background: #ffffff14;
 }
 
+.spectrum-terrain-panel select {
+  max-width: 156px;
+  min-width: 78px;
+  border: 1px solid #ffffff26;
+  border-radius: 5px;
+  padding: 3px 5px;
+  color: inherit;
+  background: var(--spectrum-wash, #14141a);
+  font: inherit;
+}
+
+.spectrum-terrain-display {
+  min-width: 0;
+  margin: 10px 0;
+  padding: 8px 0;
+  border: 0;
+  border-top: 1px solid #ffffff26;
+  border-bottom: 1px solid #ffffff26;
+}
+
+.spectrum-terrain-display legend {
+  padding: 0 6px 0 0;
+  color: var(--spectrum-accent, #c8c3ce);
+}
+
+.spectrum-terrain-display .spectrum-terrain-help {
+  margin: 6px 0 8px;
+  line-height: 1.6;
+}
+
+.spectrum-terrain-panel [hidden] { display: none !important; }
+
 .spectrum-terrain-help {
   margin: -4px 0 10px;
   color: #c8c3ce;

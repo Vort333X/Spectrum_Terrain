@@ -8,6 +8,8 @@ import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audi
 import { Axes } from './axes';
 import type { EffectSettings } from './effects';
 import { DEFAULT_PALETTE, PALETTES, type Palette } from './palettes';
+import { DEFAULT_DISPLAY, type DisplayOptions } from './display-options';
+import { createRidges, FrequencyBars, RIDGE_ROWS } from './spectrum-styles';
 
 const WIDTH = 14;
 const DEPTH = 7.8;
@@ -15,7 +17,6 @@ const HEIGHT = 3.2;
 const DISPLAY_BANDS = BANDS * 2 - 1;
 const BAND_STEP = WIDTH / (DISPLAY_BANDS - 1);
 const SURFACE_ROWS = HISTORY_SECONDS * SAMPLES_PER_SECOND + 1;
-const ROW_STEP = DEPTH / (SURFACE_ROWS - 1);
 const MAX_PIXEL_RATIO = 2;
 const FRONT = DEPTH / 2;
 const SIDE = WIDTH / 2;
@@ -147,6 +148,8 @@ const fragmentShader = `
   uniform vec3 highColor;
   uniform float surfaceOpacity;
   uniform float trailOpacity;
+  uniform float displayStyle;
+  uniform float glowStrength;
   varying float vAge;
   varying float vHeight;
   varying vec3 vNormal;
@@ -163,6 +166,20 @@ const fragmentShader = `
     float contour = pow(0.5 + 0.5 * cos(stripe), 14.0) * resolved;
     color = mix(color * light, midColor, contour * 0.20 * (1.0 - vAge));
     float opacity = surfaceOpacity * ageFade * (0.24 + 0.62 * level + 0.12 * contour);
+    if (displayStyle > 0.5 && displayStyle < 1.5) {
+      opacity = surfaceOpacity * ageFade * 0.94;
+    }
+    if (displayStyle > 1.5) {
+      // Equal-height contours replace the crossing frequency/time wire grid.
+      float coordinate = level * 12.0;
+      float distance = abs(fract(coordinate) - 0.5);
+      float pixel = max(fwidth(coordinate), 0.0001);
+      float wire = (1.0 - smoothstep(pixel * 0.25, pixel * 1.15, distance))
+        * (1.0 - smoothstep(0.3, 0.7, pixel));
+      if (wire < 0.01) discard;
+      color = mix(midColor, highColor, 0.35 + level * 0.55) * (0.8 + glowStrength * 0.3);
+      opacity = surfaceOpacity * ageFade * wire;
+    }
     gl_FragColor = vec4(color, opacity);
   }
 `;
@@ -241,22 +258,22 @@ function makeTrace() {
     .setIndex(new BufferAttribute(indices, 1));
 }
 
-function makeSurface() {
-  const position = new Float32Array(SURFACE_ROWS * DISPLAY_BANDS * 3);
-  const ages = new Float32Array(SURFACE_ROWS * DISPLAY_BANDS);
-  const bands = new Float32Array(SURFACE_ROWS * DISPLAY_BANDS);
-  const triangles = new Uint16Array((SURFACE_ROWS - 1) * (DISPLAY_BANDS - 1) * 6);
+function makeSurface(rows = SURFACE_ROWS) {
+  const position = new Float32Array(rows * DISPLAY_BANDS * 3);
+  const ages = new Float32Array(rows * DISPLAY_BANDS);
+  const bands = new Float32Array(rows * DISPLAY_BANDS);
+  const triangles = new Uint16Array((rows - 1) * (DISPLAY_BANDS - 1) * 6);
   let triangleOffset = triangles.length;
 
-  for (let row = 0; row < SURFACE_ROWS; row++) {
+  for (let row = 0; row < rows; row++) {
     for (let band = 0; band < DISPLAY_BANDS; band++) {
       const index = row * DISPLAY_BANDS + band;
       position[index * 3] = -SIDE + band * BAND_STEP;
-      position[index * 3 + 2] = FRONT - row * ROW_STEP;
-      ages[index] = row / (SURFACE_ROWS - 1);
+      position[index * 3 + 2] = FRONT - row * DEPTH / (rows - 1);
+      ages[index] = row / (rows - 1);
       bands[index] = band;
 
-      if (row === SURFACE_ROWS - 1 || band === DISPLAY_BANDS - 1) continue;
+      if (row === rows - 1 || band === DISPLAY_BANDS - 1) continue;
       triangleOffset -= 6;
       triangles.set([index, index + 1, index + DISPLAY_BANDS, index + 1, index + DISPLAY_BANDS + 1, index + DISPLAY_BANDS], triangleOffset);
     }
@@ -338,6 +355,7 @@ export class Terrain {
     side: DoubleSide,
   });
   private surface = new Mesh(this.geometry, this.material);
+  private ridgeDepth?: Mesh<BufferGeometry, ShaderMaterial>;
   private trace = new Mesh(makeTrace(), new ShaderMaterial({
     uniforms: {
       ...this.heightUniforms,
@@ -355,6 +373,9 @@ export class Terrain {
   private width = 1;
   private height = 1;
   private axes: Axes;
+  private bars?: FrequencyBars;
+  private ridges?: ReturnType<typeof createRidges>;
+  private appearanceUniform = { value: 0 };
   private orbitSpeed = 9;
   private coverMaterial?: MeshBasicMaterial;
   private framingCamera?: PerspectiveCamera;
@@ -411,7 +432,10 @@ export class Terrain {
     this.trace.frustumCulled = false;
     this.trace.renderOrder = 2;
     this.surface.add(this.trace);
+    this.material.uniforms.displayStyle = this.appearanceUniform;
+    this.material.uniforms.glowStrength = this.trace.material.uniforms.glowStrength;
     this.scene.add(this.axes.group, this.surface);
+    this.setDisplay(DEFAULT_DISPLAY);
     this.setPalette(DEFAULT_PALETTE);
     const resize = () => this.resize(stage.clientWidth, stage.clientHeight);
     this.resizeObserver = new ResizeObserver(resize);
@@ -438,6 +462,61 @@ export class Terrain {
 
   setPalette(name: Palette) {
     this.setColors(PALETTES[name].colors);
+  }
+
+  setDisplay(options: DisplayOptions) {
+    this.appearanceUniform.value = { glass: 0, solid: 1, neon: 2 }[options.appearance];
+    this.surface.visible = options.shape === 'terrain';
+    const banded = options.shape === 'bars' || options.shape === 'fins';
+    if (banded && !this.bars) {
+      this.bars = new FrequencyBars(this.styleContext());
+      this.compositeMaterial(this.bars.mesh.material);
+      this.compositeMaterial(this.bars.frontTrace.material, true);
+      this.scene.add(this.bars.mesh);
+    }
+    if (options.shape === 'ridges' && !this.ridges) {
+      this.ridges = createRidges(this.styleContext());
+      this.compositeMaterial(this.ridges.material);
+      // Match the contour rows exactly for stable hidden-line removal.
+      this.ridgeDepth = new Mesh(makeSurface(RIDGE_ROWS), new ShaderMaterial({
+        uniforms: this.heightUniforms,
+        vertexShader,
+        fragmentShader: 'void main() { gl_FragColor = vec4(0.0); }',
+        colorWrite: false,
+        depthWrite: true,
+        transparent: true,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 2,
+      }));
+      this.ridgeDepth.frustumCulled = false;
+      this.ridgeDepth.renderOrder = 0.5;
+      this.scene.add(this.ridgeDepth, this.ridges);
+    }
+    if (this.bars) {
+      this.bars.mesh.visible = banded;
+      if (banded) this.bars.configure(options.columns, options.gap, options.shape === 'fins');
+    }
+    if (this.ridges) this.ridges.visible = options.shape === 'ridges';
+    if (this.ridgeDepth) this.ridgeDepth.visible = options.shape === 'ridges';
+  }
+
+  private styleContext() {
+    return {
+      uniforms: { ...this.material.uniforms, ...this.trace.material.uniforms, displayStyle: this.appearanceUniform },
+      sampleShader: sampleHeight, width: WIDTH, depth: DEPTH, height: HEIGHT,
+    };
+  }
+
+  private compositeMaterial(material: ShaderMaterial, additive = false) {
+    if (this.view !== 'embedded-player') return;
+    // The canvas composites premultiplied RGB over the client's background.
+    // Accumulate coverage separately so translucent edges don't darken it.
+    material.blending = CustomBlending;
+    material.blendSrc = SrcAlphaFactor;
+    material.blendDst = additive ? OneFactor : OneMinusSrcAlphaFactor;
+    material.blendSrcAlpha = OneFactor;
+    material.blendDstAlpha = OneMinusSrcAlphaFactor;
   }
 
   setColors(colors: SpectrumColors, duration = 0) {

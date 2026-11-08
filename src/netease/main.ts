@@ -7,6 +7,7 @@ import { highResolutionCover, loadCover } from './cover-source';
 import { PlaybackSpectrum } from './playback-spectrum';
 import { listenToPlayback } from './playback-audio';
 import { DEFAULT_FRAME_LIMIT, FRAME_LIMIT_KEY, FrameLimit } from './frame-limit';
+import { bindDisplayControls } from './display-controls';
 import css from './style.css';
 
 declare const NETEASE_EFFECT_CONTROLS: string;
@@ -39,6 +40,21 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
         <input id="spectrum-terrain-fps-limit" data-fps-limit type="number" min="0" max="240" step="1" value="60" aria-describedby="spectrum-terrain-fps-help">
       </label>
       <p id="spectrum-terrain-fps-help" class="spectrum-terrain-help">1–240 FPS，0 表示不限帧</p>
+      <fieldset class="spectrum-terrain-display">
+        <legend>波形样式</legend>
+        <label class="spectrum-terrain-meta" for="spectrum-terrain-shape">形态<select id="spectrum-terrain-shape" data-shape></select></label>
+        <label class="spectrum-terrain-meta" for="spectrum-terrain-appearance">显示风格<select id="spectrum-terrain-appearance" data-appearance></select></label>
+        <div data-band-controls hidden>
+          <label class="spectrum-terrain-meta" for="spectrum-terrain-columns"><span data-columns-label>柱体数量</span>
+            <select id="spectrum-terrain-columns" data-columns><option value="32">32 柱</option><option value="64">64 柱</option><option value="128">128 柱</option></select>
+          </label>
+          <label class="effect-range" for="spectrum-terrain-gap"><span data-gap-label>柱体间隙</span><output class="effect-value" data-gap-value></output>
+            <input id="spectrum-terrain-gap" data-gap type="range" min="5" max="65" step="1" value="28">
+          </label>
+        </div>
+        <p class="spectrum-terrain-help" data-shape-hint></p>
+        <button type="button" data-reset-display>恢复默认样式</button>
+      </fieldset>
       ${NETEASE_EFFECT_CONTROLS}
     </div>`;
   stage.append(axes, tools);
@@ -71,6 +87,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   }
   bindEffects(form, (settings) => terrain.applyEffects({ ...settings, orbitspeed: 0 }), true);
   terrain.autoRotate = false;
+  bindDisplayControls(tools, terrain);
   const frameLimit = new FrameLimit();
   try {
     const stored = localStorage.getItem(FRAME_LIMIT_KEY);
