@@ -1,7 +1,7 @@
 export const SHAPES = {
-  bars: { label: '离散频率柱', hint: '独立频段柱体，保留 2.5 秒历史。调整柱数和间隙可以改变颗粒感。' },
+  bars: { label: '离散频率柱', hint: '前排浅色发光显示当前频谱，后方保留 2.5 秒历史。柱数和间隙可调。' },
   terrain: { label: '连续地形 · 原版', hint: '原版连续曲面与前沿亮线，用于对比新样式。' },
-  ridges: { label: '层叠光带', hint: '用 32 层独立曲线展现频谱历史，保留黑色留白和纵深。' },
+  ridges: { label: '层叠光带', hint: '12 层稀疏曲线，前沿亮、后方淡，减少光晕叠加。' },
 } as const;
 
 export const APPEARANCES = {

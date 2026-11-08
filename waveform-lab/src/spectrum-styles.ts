@@ -1,11 +1,11 @@
 import {
-  BoxGeometry, CustomBlending, InstancedBufferAttribute, InstancedBufferGeometry,
+  AdditiveBlending, BoxGeometry, CustomBlending, InstancedBufferAttribute, InstancedBufferGeometry,
   Mesh, OneMinusSrcAlphaFactor, PlaneGeometry, ShaderMaterial, SrcAlphaFactor,
 } from 'three';
 import { BANDS } from './audio';
 
 export const BAR_ROWS = 36;
-export const RIDGE_ROWS = 32;
+export const RIDGE_ROWS = 12;
 
 interface StyleContext {
   uniforms: ShaderMaterial['uniforms'];
@@ -37,6 +37,7 @@ function material(uniforms: ShaderMaterial['uniforms'], vertexShader: string, fr
 
 export class FrequencyBars {
   readonly mesh: Mesh<InstancedBufferGeometry, ShaderMaterial>;
+  readonly frontTrace: Mesh<InstancedBufferGeometry, ShaderMaterial>;
   private columns = 0;
 
   constructor(private context: StyleContext) {
@@ -44,31 +45,37 @@ export class FrequencyBars {
       ...context.uniforms,
       barWidth: { value: 1 }, barDepth: { value: 1 }, bandsPerBar: { value: 2 },
     };
+    const sampleBar = `
+      uniform float bandsPerBar;
+      ${context.sampleShader}
+      float barLevel(float band, float age) {
+        float row = age * historySpan + (1.0 - historyPhase);
+        float newer = floor(row);
+        float peak = 0.0;
+        // Both the body and front trace use the same complete FFT buckets.
+        for (int index = 0; index < 4; index++) {
+          if (float(index) < bandsPerBar) {
+            float column = band - (bandsPerBar - 1.0) + float(index) * 2.0;
+            vec2 levels = adjacentLevels(column, newer);
+            peak = max(peak, mix(levels.x, levels.y, fract(row)));
+          }
+        }
+        return levelToHeight(peak);
+      }
+    `;
     this.mesh = new Mesh(new InstancedBufferGeometry(), material(uniforms, `
       attribute vec2 barCenter;
       attribute float barBand;
       attribute float barAge;
       uniform float barWidth;
       uniform float barDepth;
-      uniform float bandsPerBar;
       varying vec3 vLocal;
       varying vec3 vFace;
       varying float vAge;
       varying float vPeak;
-      ${context.sampleShader}
+      ${sampleBar}
       void main() {
-        float row = barAge * historySpan + (1.0 - historyPhase);
-        float newer = floor(row);
-        float peak = 0.0;
-        // Preserve narrow peaks when several FFT bands share one column.
-        for (int index = 0; index < 4; index++) {
-          if (float(index) < bandsPerBar) {
-            float column = barBand - (bandsPerBar - 1.0) + float(index) * 2.0;
-            vec2 levels = adjacentLevels(column, newer);
-            peak = max(peak, mix(levels.x, levels.y, fract(row)));
-          }
-        }
-        float height = max(0.002, levelToHeight(peak));
+        float height = max(0.002, barLevel(barBand, barAge));
         vLocal = position + 0.5;
         vFace = normal;
         vAge = barAge;
@@ -113,9 +120,68 @@ export class FrequencyBars {
           color = mix(midColor, highColor, 0.35 + 0.5 * level);
           alpha *= edge * (0.55 + glowStrength * 0.45);
         }
+        if (vAge < 0.001) {
+          vec3 pale = mix(highColor, vec3(0.96, 1.0, 0.99), 0.78);
+          color = mix(color, pale, 0.48 + vLocal.y * 0.40);
+          if (displayStyle < 1.5) alpha = max(alpha, surfaceOpacity * (0.62 + 0.25 * vLocal.y));
+        }
         gl_FragColor = vec4(color, alpha);
       }
     `));
+    const frontMaterial = material(uniforms, `
+      attribute vec2 barCenter;
+      attribute float barBand;
+      uniform float barWidth;
+      uniform float barDepth;
+      uniform vec2 viewport;
+      uniform float glowRadius;
+      varying vec2 vOffset;
+      varying float vHalfLength;
+      varying float vPeak;
+      ${sampleBar}
+      void main() {
+        float height = max(0.002, barLevel(barBand, 0.0));
+        float z = barCenter.y + barDepth * 0.5 + 0.006;
+        vec4 center = projectionMatrix * modelViewMatrix * vec4(barCenter.x, height + 0.006, z, 1.0);
+        vec4 left = projectionMatrix * modelViewMatrix * vec4(barCenter.x - barWidth * 0.5, height + 0.006, z, 1.0);
+        vec4 right = projectionMatrix * modelViewMatrix * vec4(barCenter.x + barWidth * 0.5, height + 0.006, z, 1.0);
+        vec2 span = (right.xy / right.w - left.xy / left.w) * viewport * 0.5;
+        float spanLength = max(length(span), 0.001);
+        vec2 tangent = span / spanLength;
+        vec2 normal = vec2(-tangent.y, tangent.x);
+        vHalfLength = spanLength * 0.5;
+        vOffset = vec2(position.x * 2.0 * (vHalfLength + glowRadius * 0.5), position.y * glowRadius);
+        center.xy += (tangent * vOffset.x + normal * vOffset.y) * 2.0 / viewport * center.w;
+        vPeak = height / ${context.height.toFixed(1)};
+        gl_Position = center;
+      }
+    `, `
+      uniform vec3 highColor;
+      uniform float glowStrength;
+      uniform float glowRadius;
+      uniform float surfaceOpacity;
+      varying vec2 vOffset;
+      varying float vHalfLength;
+      varying float vPeak;
+      void main() {
+        if (vPeak < 0.002) discard;
+        float end = max(abs(vOffset.x) - vHalfLength, 0.0);
+        float distanceSquared = end * end + vOffset.y * vOffset.y;
+        float normalizedDistance = distanceSquared / (glowRadius * glowRadius);
+        float core = exp(-distanceSquared * 1.45);
+        float halo = glowStrength * (0.56 * exp(-normalizedDistance * 12.0) + 0.18 * exp(-normalizedDistance * 3.5));
+        float edge = (1.0 - smoothstep(0.35 * glowRadius, 0.5 * glowRadius, end))
+          * (1.0 - smoothstep(0.65 * glowRadius, glowRadius, abs(vOffset.y)));
+        float intensity = mix(0.34, 1.0, smoothstep(0.0, 0.35, vPeak));
+        vec3 color = mix(highColor, vec3(0.96, 1.0, 0.99), 0.82);
+        gl_FragColor = vec4(color, clamp((core + halo) * edge * intensity * surfaceOpacity, 0.0, 1.0));
+      }
+    `);
+    frontMaterial.blending = AdditiveBlending;
+    this.frontTrace = new Mesh(new InstancedBufferGeometry(), frontMaterial);
+    this.frontTrace.frustumCulled = false;
+    this.frontTrace.renderOrder = 2;
+    this.mesh.add(this.frontTrace);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 1;
     this.configure(64, 28);
@@ -148,6 +214,12 @@ export class FrequencyBars {
     geometry.instanceCount = count;
     this.mesh.geometry.dispose();
     this.mesh.geometry = geometry;
+    const front = instanced(new PlaneGeometry(1, 2));
+    front.setAttribute('barCenter', new InstancedBufferAttribute(centers.subarray((count - columns) * 2), 2));
+    front.setAttribute('barBand', new InstancedBufferAttribute(bands.subarray(count - columns), 1));
+    front.instanceCount = columns;
+    this.frontTrace.geometry.dispose();
+    this.frontTrace.geometry = front;
   }
 }
 
@@ -178,7 +250,8 @@ export function createRidges(context: StyleContext) {
       vec4 after = projected(min(${(BANDS * 2 - 2).toFixed(1)}, band + 1.0));
       vec2 tangent = (after.xy / after.w - before.xy / before.w) * viewport;
       vec2 normal = vec2(-tangent.y, tangent.x) / max(length(tangent), 0.001);
-      center.xy += normal * position.y * 2.0 * glowRadius / viewport * center.w;
+      float widthScale = ridgeAge < 0.001 ? 1.0 : 0.75;
+      center.xy += normal * position.y * 2.0 * glowRadius * widthScale / viewport * center.w;
       vSide = position.y;
       vLevel = profileAt(band, ridgeAge).x / ${context.height.toFixed(1)};
       vAge = ridgeAge;
@@ -201,15 +274,17 @@ export function createRidges(context: StyleContext) {
       float core = exp(-distance * glowRadius * glowRadius * 1.45);
       float halo = glowStrength * (0.45 * exp(-distance * 12.0) + 0.10 * exp(-distance * 3.5));
       float edge = 1.0 - smoothstep(0.65, 1.0, abs(vSide));
-      vec3 color = mix(midColor, highColor, clamp(vLevel, 0.0, 1.0));
+      float front = 1.0 - step(0.001, vAge);
+      vec3 color = mix(midColor, highColor, 0.22);
+      color = mix(color, mix(highColor, vec3(0.96, 1.0, 0.99), 0.72), front);
       float fade = mix(1.0, trailOpacity, smoothstep(0.0, 1.0, vAge));
-      float alpha = core + halo;
+      float alpha = core + halo * mix(0.04, 1.0, front);
       if (displayStyle > 0.5 && displayStyle < 1.5) alpha = exp(-distance * glowRadius * glowRadius * 0.55);
       if (displayStyle > 1.5) {
-        color = mix(highColor, vec3(1.0), core * 0.45);
-        alpha = core + halo * 1.8;
+        color = mix(color, vec3(1.0), core * front * 0.24);
+        alpha = core + halo * mix(0.04, 1.5, front);
       }
-      alpha *= edge * fade * surfaceOpacity * mix(0.25, 1.0, smoothstep(0.0, 0.3, vLevel));
+      alpha *= mix(0.62, 1.0, front) * edge * fade * surfaceOpacity * mix(0.25, 1.0, smoothstep(0.0, 0.3, vLevel));
       gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
     }
   `));

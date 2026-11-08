@@ -30,6 +30,15 @@ for (const columns of [32, 64, 128]) {
   const ages = geometry.getAttribute('barAge');
   assert.equal(geometry.instanceCount, columns * BAR_ROWS);
   assert.equal(center.count, columns * BAR_ROWS);
+  assert.equal(bars.frontTrace.geometry.instanceCount, columns);
+  const frontBands = bars.frontTrace.geometry.getAttribute('barBand');
+  const frontCenters = bars.frontTrace.geometry.getAttribute('barCenter');
+  for (let column = 0; column < columns; column++) {
+    const instance = center.count - columns + column;
+    assert.equal(frontBands.getX(column), bands.getX(instance), 'A front highlight sampled a different frequency bucket.');
+    assert.equal(frontCenters.getX(column), center.getX(instance));
+    assert.equal(frontCenters.getY(column), center.getY(instance));
+  }
   assert.equal(ages.getX(0), 1, 'Old history must draw before the newest row.');
   assert.equal(ages.getX(center.count - 1), 0);
   const coverage = [];
@@ -48,16 +57,19 @@ for (const columns of [32, 64, 128]) {
   bars.configure(columns, 65);
   assert.equal(bars.mesh.geometry, geometry, 'Changing spacing unnecessarily allocated a new geometry.');
   let disposed = false;
+  let frontDisposed = false;
+  bars.frontTrace.geometry.addEventListener('dispose', () => { frontDisposed = true; });
   geometry.addEventListener('dispose', () => { disposed = true; });
   bars.configure(columns === 128 ? 32 : 128, 28);
   assert.ok(disposed, 'Changing density leaked the old geometry.');
+  assert.ok(frontDisposed, 'Changing density leaked the front highlights.');
 }
 const ridges = createRidges(context);
 assert.equal(ridges.geometry.instanceCount, RIDGE_ROWS);
 const ages = ridges.geometry.getAttribute('ridgeAge');
 assert.equal(ages.getX(0), 1);
 assert.equal(ages.getX(RIDGE_ROWS - 1), 0);
-for (const mesh of [bars.mesh, ridges]) {
+for (const mesh of [bars.mesh, bars.frontTrace, ridges]) {
   mesh.geometry.dispose();
   mesh.material.dispose();
 }
