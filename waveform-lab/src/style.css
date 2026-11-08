@@ -1,0 +1,262 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  background: #000;
+  color: #ede9f3;
+  font-synthesis: none;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+  min-height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 29px 24px 23px;
+  background: #000;
+  border-right: 1px solid #2a2333;
+}
+
+.brand .mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 20px;
+  color: #f8977c;
+}
+.brand .tag, .stage-index, #fps {
+  color: #a69ab4;
+  font: 10px/1.4 ui-monospace, Consolas, monospace;
+  letter-spacing: .13em;
+}
+.brand h1 {
+  margin: 8px 0 0;
+  font-size: 34px;
+  line-height: .98;
+  letter-spacing: -.055em;
+  font-weight: 670;
+}
+.brand h1 span { color: #f8977c; }
+.brand p { color: #c6b9cf; margin: 12px 0 0; font-size: 12px; }
+
+.controls { padding-top: 18px; border-top: 1px solid #2b2435; }
+.controls h2 {
+  margin: 0 0 12px;
+  color: #c4b8cf;
+  font-size: 12px;
+  font-weight: 550;
+}
+.source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 11px;
+  font-size: 13px;
+}
+.source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.source i {
+  flex: 0 0 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #f8977c;
+  box-shadow: 0 0 11px #f8977c65;
+}
+
+button {
+  border: 1px solid #3a3046;
+  border-radius: 6px;
+  background: #1b1624;
+  color: inherit;
+  min-height: 34px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+button:hover { background-color: #30233e; }
+button:focus-visible { outline: 2px solid #ffc1ac; outline-offset: 3px; }
+button:disabled { opacity: .5; cursor: default; }
+button[aria-pressed="true"] { border-color: #a96683; background-color: #352238; }
+
+.primary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 38px;
+  background: #f4a58e;
+  color: #21121f;
+  border-color: transparent;
+  font-weight: 650;
+}
+.primary:hover { background: #ffb8a5; }
+.primary svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  fill: none;
+}
+.primary[aria-pressed="true"] {
+  border-color: #68bd9b;
+  background: #17372e;
+  color: #d1ffe8;
+}
+.primary[aria-pressed="true"]:hover { background: #214a3c; }
+.monitor-hint {
+  min-height: 2.7em;
+  margin: 8px 0 0;
+  color: #b2a5bc;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.row { display: flex; gap: 8px; }
+.row button { flex: 1; }
+
+.swatches {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  max-width: 300px;
+}
+.swatch {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 4px 5px;
+  background-color: #15111c;
+  color: #d7cedf;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.swatch::before {
+  content: "";
+  width: 100%;
+  height: 14px;
+  border-radius: 3px;
+  background: var(--gradient);
+}
+.swatch[aria-pressed="true"] { border-color: #fff1eb; color: #fff; }
+
+.panel-foot {
+  margin-top: auto;
+  color: #a89ab3;
+  font-size: 11px;
+}
+.panel-foot span, .hint span { margin: 0 4px; opacity: .7; }
+
+#stage {
+  position: relative;
+  min-width: 0;
+  min-height: 100vh;
+  isolation: isolate;
+  overflow: hidden;
+  background: #000;
+}
+#stage canvas { display: block; position: absolute; inset: 0; touch-action: none; }
+#stage canvas:active { cursor: grabbing; }
+#stage canvas { cursor: grab; }
+.stage-header, .hint, #axes, #stage-error { z-index: 1; pointer-events: none; }
+.stage-header {
+  display: flex;
+  gap: 11px;
+  align-items: baseline;
+  position: absolute;
+  top: 27px;
+  left: 28px;
+  font-size: 12px;
+  color: #cec0d9;
+}
+.hint {
+  position: absolute;
+  bottom: 14px;
+  left: 28px;
+  color: #ab9bb8;
+  font-size: 11px;
+}
+#axes { position: absolute; inset: 0; }
+#axes .axis-tick {
+  position: absolute;
+  color: #b9a8c6;
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #000b;
+}
+#stage-error {
+  position: absolute;
+  inset: 42% 12% auto;
+  text-align: center;
+  color: #ffc6b5;
+}
+
+body[data-mode="wallpaper"] { display: block; }
+body[data-mode="wallpaper"] .panel,
+body[data-mode="wallpaper"] .hint,
+body[data-mode="wallpaper"] .stage-header { display: none; }
+
+.effects summary {
+  color: #e2d9ed;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+.effects-body, #effects { display: grid; gap: 12px; }
+.effects-body { margin-top: 14px; }
+.effect-check, .test-source, .effect-range {
+  color: #c4b8cf;
+  font-size: 11px;
+}
+.effect-check, .test-source { display: flex; align-items: center; gap: 6px; }
+.test-source { justify-content: space-between; }
+.test-source select {
+  padding: 4px 7px;
+  border: 1px solid #3a3046;
+  border-radius: 4px;
+  background: #1b1624;
+  color: #ede9f3;
+  font: inherit;
+}
+.effect-range { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
+.effect-value {
+  color: #f4a58e;
+  font-family: ui-monospace, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.effect-range input { grid-column: 1 / -1; width: 100%; margin: 0; }
+#effects input { accent-color: #f4a58e; }
+#reset-effects { width: 100%; }
+
+.axis-legend {
+  position: absolute;
+  right: 26px;
+  bottom: 24px;
+  color: #a6a2ad;
+  font-size: 10px;
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  body { grid-template-columns: 1fr; }
+  #stage { grid-row: 1; min-height: 52vh; }
+  .panel { min-height: 0; max-height: none; padding: 20px; gap: 15px; border: 0; border-top: 1px solid #2a2333; }
+  .brand h1 { font-size: 26px; }
+  .brand h1 br, .brand .mark, .stage-index { display: none; }
+  .stage-header, .hint { left: 15px; }
+  .axis-legend { bottom: 41px; right: 15px; }
+  body[data-mode="wallpaper"] #stage { min-height: 100vh; }
+}

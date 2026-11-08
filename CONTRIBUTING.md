@@ -9,6 +9,7 @@ npm ci
 npm run check
 npm run test:audio
 npm run build
+npm run build:lab
 npm run build:player
 npm run build:netease
 ```
@@ -18,5 +19,7 @@ npm run build:netease
 修改三维渲染或公共模块后，请检查网页和播放页原型。修改网易云音频接口后，请检查正常播放、暂停恢复、切歌、拖动进度条，以及收起后重新展开。运行环境中的实测结果可以写进 PR 描述。
 
 源码按入口放在 `src/web`、`src/player`、`src/netease`，共用逻辑放在 `src/shared`。依赖通过根目录的锁文件安装，构建产物由脚本生成。
+
+新波形先在独立的 [`waveform-lab`](waveform-lab/README.md) 中试验。它包含网页监听、演示以及绘制和音频的独立副本，构建命令为 `npm run build:lab`。样式通过效果和性能验证后，再选择性接入正式入口；试验代码不直接引用 `src/shared`。
 
 提交的贡献按本项目的 [MIT 许可证](LICENSE) 发布。引入第三方代码时，请一并保留其许可声明并更新 [第三方组件说明](THIRD_PARTY_NOTICES.md)。

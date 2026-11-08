@@ -15,6 +15,7 @@
 | 功能 | 源码目录 | 构建命令 | 生成位置 |
 | --- | --- | --- | --- |
 | 网页与 Wallpaper Engine 壁纸 | `src/web/` | `npm run build` | `dist/index.html` |
+| 新波形样式试验 | `waveform-lab/src/` | `npm run build:lab` | `waveform-lab/dist/index.html` |
 | 立体播放页原型 | `src/player/` | `npm run build:player` | `dist-player/index.html` |
 | 网易云音乐插件 | `src/netease/` | `npm run build:netease` | `dist-netease/*.plugin` |
 | 共用音频分析、封面取色和三维渲染 | `src/shared/` | 随各入口构建 | 打包到各入口 |
@@ -33,6 +34,12 @@ npm run build
 在 Windows 上用 Chrome 或 Edge 打开 `dist/index.html`。页面先显示无声的演示动画。点击「监听系统音频」，在浏览器弹出的共享选项中选择整个屏幕，勾选「共享系统音频」。只想听某个标签页时，可以选该标签页并共享其音频。点击「停止监听」或在浏览器中结束共享，页面会回到演示。
 
 共享由浏览器管理。页面只将音轨接入本地频谱分析，屏幕画面不会进入渲染器。浏览器是否提供系统音轨取决于共享来源和系统支持。
+
+## 新波形样式试验
+
+后续的新波形先在根目录的 [`waveform-lab`](waveform-lab/README.md) 中开发。这里保留网页系统音频监听、演示、扫频和双频脉冲，并使用独立的绘制与音频代码副本。
+
+运行 `npm run build:lab`，用浏览器打开 `waveform-lab/dist/index.html`。试验参数单独保存，构建提供可读代码和 source map。样式验证通过后再接入正式入口。
 
 ## 立体播放页原型
 
@@ -94,7 +101,8 @@ src/
   player/    立体播放页原型入口、HTML 和样式
   netease/   网易云插件入口、PCM 分析、客户端接口和插件清单
   shared/    音频频段、Three.js 渲染、频谱历史、封面取色和效果参数
-scripts/     各入口的构建脚本
+waveform-lab/ 独立网页监听和演示，新波形样式先在这里试验
+scripts/     正式入口的构建脚本
 docs/        新手使用说明
 ```
 
