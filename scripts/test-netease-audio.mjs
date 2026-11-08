@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
+import { runInNewContext } from 'node:vm';
 
 const bundle = await build({
   stdin: {
@@ -9,7 +10,7 @@ const bundle = await build({
       export { listenToPlayback } from './src/netease/playback-audio';
       export { SpectrumHistory } from './src/shared/spectrum-history';
       export { Terrain } from './src/shared/terrain';
-      export { PlaybackSpectrum } from './src/netease/playback-spectrum';
+      export { PlaybackSpectrum, summarizeWorkerError } from './src/netease/playback-spectrum';
       export { FrameLimit, normalizeFrameLimit } from './src/netease/frame-limit';
     `,
   },
@@ -18,7 +19,7 @@ const bundle = await build({
   define: { AUDIO_WORKER_SOURCE: JSON.stringify('/* controlled worker test */') },
   write: false,
 });
-const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum, FrameLimit, normalizeFrameLimit } = await import(
+const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum, FrameLimit, normalizeFrameLimit, summarizeWorkerError } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64')
 );
 
@@ -64,7 +65,30 @@ try {
   assert.equal(normalizeFrameLimit(NaN), 60);
   assert.equal(normalizeFrameLimit(-10), 0);
   assert.equal(normalizeFrameLimit(999), 240);
+  assert.equal(summarizeWorkerError("Access to 'data:text/javascript," + 'x'.repeat(10000) + "' is blocked from origin 'orpheus://orpheus'."),
+    "Access to 'data:[内嵌脚本]' is blocked from origin 'orpheus://orpheus'.");
   console.log('PASS: custom FPS caps across 60/120/144/240 Hz, unlimited mode, runtime changes and stall recovery.');
+
+  const workerBundle = await build({
+    entryPoints: ['src/netease/audio-worker.ts'], bundle: true, format: 'iife', target: 'chrome91', write: false,
+  });
+  const directReplies = [];
+  const workerSelf = { postMessage: (message) => directReplies.push(message) };
+  runInNewContext(workerBundle.outputFiles[0].text, { self: workerSelf, performance: { now: () => 0 } });
+  assert.equal(directReplies[0].type, 'ready');
+  const portReplies = [];
+  const port = { onmessage: null, postMessage: (message) => portReplies.push(structuredClone(message)) };
+  workerSelf.onmessage({ data: { type: 'connect' }, ports: [port] });
+  assert.equal(portReplies[0].type, 'ready');
+  port.onmessage({ data: { type: 'pcm', bytes: tone(1000), pts: 0 } });
+  port.onmessage({ data: { type: 'sample', id: 123, steps: 1 } });
+  assert.equal(portReplies.at(-1).id, 123);
+  assert.ok(Math.abs(dominantHz(portReplies.at(-1).levels) / 1000 - 1) < 0.1);
+  assert.equal(directReplies.length, 1, 'PCM results were forwarded through the host instead of the direct port.');
+  port.onmessage({ data: { type: 'reset' } });
+  port.onmessage({ data: { type: 'sample', id: 124, steps: 1 } });
+  assert.ok(portReplies.at(-1).levels.every(value => value === 0));
+  console.log('PASS: hosted worker receives native PCM, replies directly over MessagePort and resets on playback changes.');
   let analysedRows = 0;
   let writtenRows = 0;
   const history = new SpectrumHistory({
@@ -285,8 +309,13 @@ try {
   const dataWorker = workers.at(-1);
   assert.ok(blobWorker.terminated);
   assert.match(dataWorker.url, /^data:text\/javascript/);
-  assert.equal(dataWorker.messages[0].type, 'pcm', 'Retry discarded the newest live packet.');
+  for (let packet = 0; packet < 100; packet++) retry.push(sharedBytes, packet);
+  retry.sample(levels);
+  assert.equal(dataWorker.messages.length, 0, 'Audio accumulated while the worker was starting.');
   dataWorker.emit({ type: 'ready' });
+  assert.equal(dataWorker.messages.length, 1);
+  assert.equal(dataWorker.messages[0].type, 'pcm', 'Retry discarded the newest live packet.');
+  assert.equal(dataWorker.messages[0].pts, 99, 'Startup replayed old audio instead of the newest packet.');
   assert.equal(retry.mode, '后台线程');
   blobWorker.onerror({ preventDefault() {}, message: 'Late error' });
   assert.equal(dataWorker.terminated, false, 'A stale worker error terminated the replacement.');

@@ -1,10 +1,15 @@
 import { BANDS } from '../shared/audio';
 import { PcmSpectrum } from './pcm-spectrum';
+import { LocalAudioWorker, type AnalysisWorker } from './local-audio-worker';
 
 declare const AUDIO_WORKER_SOURCE: string;
 
+export function summarizeWorkerError(reason: string) {
+  return reason.replace(/data:[^\s'"<>]+/g, 'data:[内嵌脚本]');
+}
+
 export class PlaybackSpectrum {
-  private worker?: Worker;
+  private worker?: AnalysisWorker;
   private fallback?: PcmSpectrum;
   private readonly levels = new Float32Array(BANDS);
   private workerUrl?: string;
@@ -17,15 +22,15 @@ export class PlaybackSpectrum {
   private lastBytes?: Uint8Array;
   private lastPts?: number;
   private closed = false;
-  private workerKind: 'blob' | 'data' = 'blob';
+  private workerKind: 'blob' | 'data' | 'local' = 'blob';
   private workerReady = false;
-  private failure = '';
+  private readonly failures: string[] = [];
 
   constructor() {
     this.startWorker('blob');
   }
 
-  private startWorker(kind: 'blob' | 'data') {
+  private startWorker(kind: 'blob' | 'data' | 'local') {
     this.worker?.terminate();
     this.worker = undefined;
     this.releaseStartup();
@@ -37,16 +42,17 @@ export class PlaybackSpectrum {
     try {
       // CEF custom-scheme pages may reject blob workers. A self-contained data
       // worker also has an opaque origin and needs no remote script or server.
-      const url = kind === 'data'
+      const worker = kind === 'local' ? new LocalAudioWorker() : new Worker(kind === 'data'
         ? `data:text/javascript;charset=utf-8,${encodeURIComponent(AUDIO_WORKER_SOURCE)}`
-        : (this.workerUrl = URL.createObjectURL(new Blob([AUDIO_WORKER_SOURCE], { type: 'text/javascript' })));
-      const worker = new Worker(url);
+        : (this.workerUrl = URL.createObjectURL(new Blob([AUDIO_WORKER_SOURCE], { type: 'text/javascript' }))));
       this.worker = worker;
       worker.onmessage = ({ data }) => {
         if (this.closed || this.worker !== worker) return;
         if (data.type === 'ready') {
           this.workerReady = true;
+          this.requestedAt = performance.now();
           this.releaseStartup();
+          if (this.lastBytes) this.sendPcm(this.lastBytes, this.lastPts);
         }
         if (data.type === 'spectrum' && data.id === this.requestId) {
           this.pending = false;
@@ -63,10 +69,9 @@ export class PlaybackSpectrum {
       };
       this.startupTimer = window.setTimeout(() => {
         if (this.worker === worker) this.workerFailed('Worker 启动超时');
-      }, 1500);
-      if (this.lastBytes) this.sendPcm(this.lastBytes, this.lastPts);
+      }, kind === 'local' ? 5000 : 1500);
     } catch (error) {
-      this.workerFailed(error instanceof Error ? error.message : String(error));
+      this.workerFailed(error instanceof Error ? `${error.name}: ${error.message}` : String(error));
     }
   }
 
@@ -79,7 +84,8 @@ export class PlaybackSpectrum {
   }
 
   get diagnostic() {
-    return this.failure;
+    const status = this.workerReady && this.workerKind === 'local' ? '已通过本机 HTTP 宿主启动后台线程。\n' : '';
+    return status + this.failures.join('\n');
   }
 
   push(bytes: Uint8Array, pts?: number) {
@@ -89,7 +95,7 @@ export class PlaybackSpectrum {
     this.lastBytes = bytes;
     this.lastPts = pts;
     if (this.worker) {
-      this.sendPcm(bytes, pts);
+      if (this.workerReady) this.sendPcm(bytes, pts);
     } else {
       this.fallback!.push(bytes, pts);
     }
@@ -100,12 +106,13 @@ export class PlaybackSpectrum {
       target.fill(0);
       return;
     }
-    if (this.pending && performance.now() - this.requestedAt > 1000) this.workerFailed('Worker 分析响应超时');
+    if (this.workerReady && this.pending && performance.now() - this.requestedAt > 1000) this.workerFailed('Worker 分析响应超时');
     if (this.fallback) {
       this.fallback.sample(target);
       return;
     }
     target.set(this.levels);
+    if (!this.workerReady) return;
     this.pendingSteps = Math.min(4, this.pendingSteps + 1);
     if (!this.pending) {
       this.pending = true;
@@ -128,7 +135,7 @@ export class PlaybackSpectrum {
     this.lastPts = undefined;
     this.lastPacket = -Infinity;
     this.fallback?.reset();
-    if (this.worker) {
+    if (this.worker && this.workerReady) {
       try {
         this.worker.postMessage({ type: 'reset' });
       } catch (error) {
@@ -139,6 +146,7 @@ export class PlaybackSpectrum {
 
   dispose() {
     this.closed = true;
+    this.workerReady = false;
     this.worker?.terminate();
     this.worker = undefined;
     this.releaseStartup();
@@ -164,10 +172,15 @@ export class PlaybackSpectrum {
 
   private workerFailed(reason: string) {
     if (this.closed || this.fallback) return;
-    this.failure = `${this.workerKind}: ${reason}`;
-    console.warn('[SpectrumTerrain] 后台分析', this.failure);
+    const failure = `${this.workerKind}: ${summarizeWorkerError(reason)}`;
+    this.failures.push(failure);
+    console.warn('[SpectrumTerrain] 后台分析', failure);
     if (this.workerKind === 'blob') {
       this.startWorker('data');
+      return;
+    }
+    if (this.workerKind === 'data') {
+      this.startWorker('local');
       return;
     }
     this.useFallback();
@@ -177,6 +190,7 @@ export class PlaybackSpectrum {
     if (this.closed || this.fallback) return;
     this.worker?.terminate();
     this.worker = undefined;
+    this.workerReady = false;
     this.releaseStartup();
     this.pending = false;
     this.fallback = new PcmSpectrum();

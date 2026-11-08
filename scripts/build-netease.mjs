@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import manifest from '../src/netease/manifest.json' with { type: 'json' };
 
 const output = 'dist-netease';
-const files = ['manifest.json', 'main.js', 'LICENSE.txt', 'three-LICENSE.txt'];
+const files = ['manifest.json', 'main.js', 'worker', 'LICENSE.txt', 'three-LICENSE.txt'];
 const archive = `${output}/${manifest.name}-${manifest.version}`;
 const webPage = await readFile('src/web/index.html', 'utf8');
 const effectControls = webPage.match(/<form id="effects">[\s\S]*?<\/form>/)?.[0];
@@ -18,7 +18,7 @@ const worker = await build({
   write: false,
 });
 
-await mkdir(output, { recursive: true });
+await mkdir(`${output}/worker`, { recursive: true });
 await Promise.all([
   build({
     entryPoints: ['src/netease/main.ts'],
@@ -38,6 +38,16 @@ await Promise.all([
   copyFile('src/netease/manifest.json', `${output}/manifest.json`),
   copyFile('node_modules/three/LICENSE', `${output}/three-LICENSE.txt`),
   copyFile('LICENSE', `${output}/LICENSE.txt`),
+  writeFile(`${output}/worker/audio-worker.js`, worker.outputFiles[0].text),
+  copyFile('src/netease/worker-host.html', `${output}/worker/index.html`),
+  build({
+    entryPoints: ['src/netease/worker-host.ts'],
+    bundle: true,
+    minify: true,
+    format: 'iife',
+    target: 'chrome91',
+    outfile: `${output}/worker/host.js`,
+  }),
 ]);
 
 execFileSync('tar.exe', ['-a', '-cf', `${archive}.zip`, '-C', output, ...files], { stdio: 'inherit' });
