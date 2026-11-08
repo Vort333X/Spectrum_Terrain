@@ -21,6 +21,7 @@
     "build": "npm run check && node scripts/build.mjs",
     "check:lab": "tsc --noEmit -p waveform-lab/tsconfig.json",
     "build:lab": "npm run check:lab && node waveform-lab/build.mjs",
+    "test:lab": "node waveform-lab/test.mjs",
     "build:player": "npm run check && node scripts/build-player.mjs",
     "build:netease": "npm run check && node scripts/build-netease.mjs",
     "test:audio": "node scripts/test-netease-audio.mjs"

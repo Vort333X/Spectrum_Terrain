@@ -8,6 +8,8 @@ import { BANDS, HISTORY_ROWS, HISTORY_SECONDS, SAMPLES_PER_SECOND } from './audi
 import { Axes } from './axes';
 import type { EffectSettings } from './effects';
 import { DEFAULT_PALETTE, PALETTES, type Palette } from './palettes';
+import { DEFAULT_DISPLAY, type DisplayOptions } from './display-options';
+import { createRidges, FrequencyBars } from './spectrum-styles';
 
 const WIDTH = 14;
 const DEPTH = 7.8;
@@ -128,6 +130,7 @@ const vertexShader = `
   varying float vAge;
   varying float vHeight;
   varying vec3 vNormal;
+  varying float vBand;
 
   ${sampleHeight}
 
@@ -137,6 +140,7 @@ const vertexShader = `
     vAge = age;
     vHeight = point.y;
     vNormal = normalize(vec3(-0.65 * profile.y, 1.0, -0.45 * profile.z));
+    vBand = band;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(point, 1.0);
   }
 `;
@@ -147,9 +151,12 @@ const fragmentShader = `
   uniform vec3 highColor;
   uniform float surfaceOpacity;
   uniform float trailOpacity;
+  uniform float displayStyle;
+  uniform float glowStrength;
   varying float vAge;
   varying float vHeight;
   varying vec3 vNormal;
+  varying float vBand;
 
   void main() {
     float level = clamp(vHeight / ${HEIGHT.toFixed(1)}, 0.0, 1.0);
@@ -163,6 +170,19 @@ const fragmentShader = `
     float contour = pow(0.5 + 0.5 * cos(stripe), 14.0) * resolved;
     color = mix(color * light, midColor, contour * 0.20 * (1.0 - vAge));
     float opacity = surfaceOpacity * ageFade * (0.24 + 0.62 * level + 0.12 * contour);
+    if (displayStyle > 0.5 && displayStyle < 1.5) {
+      opacity = surfaceOpacity * ageFade * 0.94;
+    }
+    if (displayStyle > 1.5) {
+      vec2 grid = vec2(vBand / 8.0, vAge * 32.0);
+      vec2 distance = abs(fract(grid + 0.5) - 0.5);
+      vec2 pixel = max(fwidth(grid), vec2(0.0001));
+      vec2 edges = 1.0 - smoothstep(pixel * 0.25, pixel * 1.25, distance);
+      float wire = max(edges.x, edges.y);
+      if (wire < 0.01) discard;
+      color = mix(midColor, highColor, 0.35 + level * 0.55) * (0.8 + glowStrength * 0.3);
+      opacity = surfaceOpacity * ageFade * wire;
+    }
     gl_FragColor = vec4(color, opacity);
   }
 `;
@@ -355,6 +375,9 @@ export class Terrain {
   private width = 1;
   private height = 1;
   private axes: Axes;
+  private bars: FrequencyBars;
+  private ridges: ReturnType<typeof createRidges>;
+  private appearanceUniform = { value: 0 };
   private orbitSpeed = 9;
   private coverMaterial?: MeshBasicMaterial;
   private framingCamera?: PerspectiveCamera;
@@ -411,7 +434,16 @@ export class Terrain {
     this.trace.frustumCulled = false;
     this.trace.renderOrder = 2;
     this.surface.add(this.trace);
-    this.scene.add(this.axes.group, this.surface);
+    this.material.uniforms.displayStyle = this.appearanceUniform;
+    this.material.uniforms.glowStrength = this.trace.material.uniforms.glowStrength;
+    const styleContext = {
+      uniforms: { ...this.material.uniforms, ...this.trace.material.uniforms, displayStyle: this.appearanceUniform },
+      sampleShader: sampleHeight, width: WIDTH, depth: DEPTH, height: HEIGHT,
+    };
+    this.bars = new FrequencyBars(styleContext);
+    this.ridges = createRidges(styleContext);
+    this.scene.add(this.axes.group, this.surface, this.bars.mesh, this.ridges);
+    this.setDisplay(DEFAULT_DISPLAY);
     this.setPalette(DEFAULT_PALETTE);
     const resize = () => this.resize(stage.clientWidth, stage.clientHeight);
     this.resizeObserver = new ResizeObserver(resize);
@@ -438,6 +470,14 @@ export class Terrain {
 
   setPalette(name: Palette) {
     this.setColors(PALETTES[name].colors);
+  }
+
+  setDisplay(options: DisplayOptions) {
+    this.appearanceUniform.value = { glass: 0, solid: 1, neon: 2 }[options.appearance];
+    this.surface.visible = options.shape === 'terrain';
+    this.bars.mesh.visible = options.shape === 'bars';
+    this.ridges.visible = options.shape === 'ridges';
+    this.bars.configure(options.columns, options.gap);
   }
 
   setColors(colors: SpectrumColors, duration = 0) {

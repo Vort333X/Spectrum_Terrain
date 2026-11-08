@@ -3,6 +3,8 @@ import { Terrain } from './terrain';
 import { DEFAULT_PALETTE, isPalette, PALETTES, type Palette } from './palettes';
 import { bindEffects } from './effects';
 import { SpectrumHistory } from './spectrum-history';
+import { APPEARANCES, DISPLAY_STORAGE_KEY, readDisplayOptions, SHAPES } from './display-options';
+import { BAR_ROWS, RIDGE_ROWS } from './spectrum-styles';
 
 declare global {
   interface Window {
@@ -35,6 +37,43 @@ function start() {
 
   const sampleRate = isWallpaper ? WALLPAPER_SAMPLE_RATE : SAMPLES_PER_SECOND;
   const terrain = new Terrain(stage, sampleRate, isWallpaper);
+  const shapeSelect = document.querySelector<HTMLSelectElement>('#shape')!;
+  const appearanceSelect = document.querySelector<HTMLSelectElement>('#appearance')!;
+  const columnsSelect = document.querySelector<HTMLSelectElement>('#columns')!;
+  const gapInput = document.querySelector<HTMLInputElement>('#bar-gap')!;
+  const gapValue = document.querySelector<HTMLOutputElement>('#bar-gap-value')!;
+  const barControls = document.querySelector<HTMLElement>('#bar-controls')!;
+  const shapeHint = document.querySelector<HTMLElement>('#shape-hint')!;
+  const styleStats = document.querySelector<HTMLElement>('#style-stats')!;
+  for (const [key, option] of Object.entries(SHAPES)) shapeSelect.add(new Option(option.label, key));
+  for (const [key, label] of Object.entries(APPEARANCES)) appearanceSelect.add(new Option(label, key));
+  let storedDisplay: unknown;
+  if (!isWallpaper) {
+    try { storedDisplay = JSON.parse(localStorage.getItem(DISPLAY_STORAGE_KEY) ?? 'null'); } catch { /* Use defaults. */ }
+  }
+  const initialDisplay = readDisplayOptions(storedDisplay);
+  shapeSelect.value = initialDisplay.shape;
+  appearanceSelect.value = initialDisplay.appearance;
+  columnsSelect.value = String(initialDisplay.columns);
+  gapInput.value = String(initialDisplay.gap);
+  function updateDisplay(persist = true) {
+    const options = readDisplayOptions({
+      shape: shapeSelect.value, appearance: appearanceSelect.value,
+      columns: Number(columnsSelect.value), gap: gapInput.valueAsNumber,
+    });
+    terrain.setDisplay(options);
+    barControls.hidden = options.shape !== 'bars';
+    shapeHint.textContent = SHAPES[options.shape].hint;
+    gapValue.value = `${options.gap}%`;
+    styleStats.textContent = options.shape === 'bars' ? `${options.columns} 频段柱 × ${BAR_ROWS} 历史层 · 2.5 秒`
+      : options.shape === 'ridges' ? `${RIDGE_ROWS} 层光带 · 2.5 秒历史` : '255 曲面列 · 2.5 秒历史';
+    if (persist && !isWallpaper) {
+      try { localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(options)); } catch { /* Controls still work. */ }
+    }
+  }
+  for (const input of [shapeSelect, appearanceSelect, columnsSelect]) input.addEventListener('change', () => updateDisplay());
+  gapInput.addEventListener('input', () => updateDisplay());
+  updateDisplay(false);
   const history = new SpectrumHistory(terrain, sampleRate);
   const setEffects = bindEffects(effects, (settings) => terrain.applyEffects(settings), !isWallpaper);
   const systemBands = new Float32Array(WALLPAPER_BANDS);

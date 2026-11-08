@@ -28,6 +28,21 @@
       <p class="monitor-hint" id="monitor-hint">在共享窗口勾选「共享系统音频」。</p>
     </section>
 
+    <section class="controls style-controls" aria-labelledby="style-label">
+      <h2 id="style-label">波形样式</h2>
+      <label class="test-source" for="shape">形态 <select id="shape" aria-describedby="shape-hint"></select></label>
+      <label class="test-source" for="appearance">显示风格 <select id="appearance"></select></label>
+      <div id="bar-controls">
+        <label class="test-source" for="columns">柱体数量
+          <select id="columns"><option value="32">32 柱</option><option value="64">64 柱</option><option value="128">128 柱</option></select>
+        </label>
+        <label class="effect-range" for="bar-gap">柱体间隙 <output id="bar-gap-value" class="effect-value"></output>
+          <input type="range" id="bar-gap" min="5" max="65" step="1" value="28">
+        </label>
+      </div>
+      <p class="monitor-hint" id="shape-hint"></p>
+    </section>
+
     <section class="controls" aria-labelledby="palette-label">
       <h2 id="palette-label">配色</h2>
       <div class="swatches"></div>
@@ -53,7 +68,7 @@
         </label>
         <form id="effects">
           <label class="effect-check"><input type="checkbox" name="axes" data-effect checked> 显示坐标轴</label>
-          <label class="effect-range">曲面不透明度 <span class="effect-value" aria-hidden="true"></span>
+          <label class="effect-range">图形不透明度 <span class="effect-value" aria-hidden="true"></span>
             <input type="range" name="opacity" data-effect data-unit="%" min="0" max="100" value="78">
           </label>
           <label class="effect-range">后方保留亮度 <span class="effect-value" aria-hidden="true"></span>
@@ -80,7 +95,7 @@
       </div>
     </details>
 
-    <footer class="panel-foot">255 曲面列 <span>·</span> 2.5 秒历史</footer>
+    <footer class="panel-foot" id="style-stats"></footer>
   </aside>
 
   <main id="stage" aria-label="实时三维频谱瀑布图">

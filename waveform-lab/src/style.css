@@ -231,6 +231,11 @@ body[data-mode="wallpaper"] .stage-header { display: none; }
   color: #ede9f3;
   font: inherit;
 }
+.style-controls, #bar-controls { display: grid; gap: 10px; }
+#bar-controls[hidden] { display: none; }
+.style-controls select { max-width: 150px; }
+.style-controls .monitor-hint { margin: 0; }
+#bar-gap { accent-color: #f4a58e; }
 .effect-range { display: grid; grid-template-columns: 1fr auto; gap: 5px; }
 .effect-value {
   color: #f4a58e;

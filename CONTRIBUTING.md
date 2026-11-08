@@ -10,6 +10,7 @@ npm run check
 npm run test:audio
 npm run build
 npm run build:lab
+npm run test:lab
 npm run build:player
 npm run build:netease
 ```
