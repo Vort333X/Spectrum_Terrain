@@ -1,7 +1,7 @@
 export const SHAPES = {
   bars: { label: '离散频率柱', hint: '前排浅色发光显示当前频谱，后方保留 2.5 秒历史。柱数和间隙可调。' },
   terrain: { label: '连续地形 · 原版', hint: '原版连续曲面与前沿亮线，用于对比新样式。' },
-  ridges: { label: '层叠光带', hint: '12 层稀疏曲线，前沿亮、后方淡，减少光晕叠加。' },
+  ridges: { label: '层叠光带', hint: '64 层细轮廓贴合原版曲面，遮住后方交叉线，只在前沿保留光晕。' },
 } as const;
 
 export const APPEARANCES = {

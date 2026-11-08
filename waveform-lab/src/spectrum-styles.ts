@@ -5,7 +5,7 @@ import {
 import { BANDS } from './audio';
 
 export const BAR_ROWS = 36;
-export const RIDGE_ROWS = 12;
+export const RIDGE_ROWS = 64;
 
 interface StyleContext {
   uniforms: ShaderMaterial['uniforms'];
@@ -119,6 +119,12 @@ export class FrequencyBars {
           if (edge < 0.01) discard;
           color = mix(midColor, highColor, 0.35 + 0.5 * level);
           alpha *= edge * (0.55 + glowStrength * 0.45);
+          if (vAge > 0.001) {
+            // History needs only faint caps, rather than thousands of complete boxes.
+            if (vLocal.y < 0.97) discard;
+            color = mix(lowColor, midColor, 0.85);
+            alpha *= mix(0.30, 0.10, smoothstep(0.0, 1.0, vAge));
+          }
         }
         if (vAge < 0.001) {
           vec3 pale = mix(highColor, vec3(0.96, 1.0, 0.99), 0.78);
@@ -250,8 +256,8 @@ export function createRidges(context: StyleContext) {
       vec4 after = projected(min(${(BANDS * 2 - 2).toFixed(1)}, band + 1.0));
       vec2 tangent = (after.xy / after.w - before.xy / before.w) * viewport;
       vec2 normal = vec2(-tangent.y, tangent.x) / max(length(tangent), 0.001);
-      float widthScale = ridgeAge < 0.001 ? 1.0 : 0.75;
-      center.xy += normal * position.y * 2.0 * glowRadius * widthScale / viewport * center.w;
+      float radius = ridgeAge < 0.001 ? glowRadius : 1.5;
+      center.xy += normal * position.y * 2.0 * radius / viewport * center.w;
       vSide = position.y;
       vLevel = profileAt(band, ridgeAge).x / ${context.height.toFixed(1)};
       vAge = ridgeAge;
@@ -270,21 +276,22 @@ export function createRidges(context: StyleContext) {
     varying float vLevel;
     varying float vAge;
     void main() {
-      float distance = vSide * vSide;
-      float core = exp(-distance * glowRadius * glowRadius * 1.45);
-      float halo = glowStrength * (0.45 * exp(-distance * 12.0) + 0.10 * exp(-distance * 3.5));
-      float edge = 1.0 - smoothstep(0.65, 1.0, abs(vSide));
       float front = 1.0 - step(0.001, vAge);
-      vec3 color = mix(midColor, highColor, 0.22);
+      float radius = mix(1.5, glowRadius, front);
+      float distance = abs(vSide) * radius;
+      float core = mix(1.0 - smoothstep(0.25, 0.95, distance), exp(-distance * distance * 1.45), front);
+      float halo = glowStrength * (0.45 * exp(-vSide * vSide * 12.0) + 0.10 * exp(-vSide * vSide * 3.5));
+      float edge = 1.0 - smoothstep(0.65, 1.0, abs(vSide));
+      vec3 color = mix(midColor, highColor, 0.22 + 0.48 * clamp(vLevel, 0.0, 1.0));
       color = mix(color, mix(highColor, vec3(0.96, 1.0, 0.99), 0.72), front);
       float fade = mix(1.0, trailOpacity, smoothstep(0.0, 1.0, vAge));
-      float alpha = core + halo * mix(0.04, 1.0, front);
-      if (displayStyle > 0.5 && displayStyle < 1.5) alpha = exp(-distance * glowRadius * glowRadius * 0.55);
+      float alpha = core + halo * front;
+      if (displayStyle > 0.5 && displayStyle < 1.5) alpha = mix(core, exp(-distance * distance * 0.55), front);
       if (displayStyle > 1.5) {
         color = mix(color, vec3(1.0), core * front * 0.24);
-        alpha = core + halo * mix(0.04, 1.5, front);
+        alpha = core + halo * front * 1.5;
       }
-      alpha *= mix(0.62, 1.0, front) * edge * fade * surfaceOpacity * mix(0.25, 1.0, smoothstep(0.0, 0.3, vLevel));
+      alpha *= mix(0.72, 1.0, front) * edge * fade * surfaceOpacity * mix(0.25, 1.0, smoothstep(0.0, 0.3, vLevel));
       gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
     }
   `));
