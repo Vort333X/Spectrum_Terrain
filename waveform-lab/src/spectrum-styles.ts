@@ -120,10 +120,10 @@ export class FrequencyBars {
           color = mix(midColor, highColor, 0.35 + 0.5 * level);
           alpha *= edge * (0.55 + glowStrength * 0.45);
           if (vAge > 0.001) {
-            // History needs only faint caps, rather than thousands of complete boxes.
+            // Keep visible cap contours without restoring full wireframe boxes.
             if (vLocal.y < 0.97) discard;
-            color = mix(lowColor, midColor, 0.85);
-            alpha *= mix(0.30, 0.10, smoothstep(0.0, 1.0, vAge));
+            color = mix(midColor, highColor, 0.15 + 0.25 * level);
+            alpha *= mix(0.65, 0.40, smoothstep(0.0, 1.0, vAge));
           }
         }
         if (vAge < 0.001) {
