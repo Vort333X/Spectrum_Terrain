@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "SpectrumTerrain",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "author": "Vort333X",
   "description": "随网易云当前歌曲播放的实时三维频谱和高清立体封面。",
   "ncm3-compatible": true,

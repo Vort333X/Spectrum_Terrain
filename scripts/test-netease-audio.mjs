@@ -9,18 +9,21 @@ const bundle = await build({
       export { listenToPlayback } from './src/netease/playback-audio';
       export { SpectrumHistory } from './src/shared/spectrum-history';
       export { Terrain } from './src/shared/terrain';
+      export { PlaybackSpectrum } from './src/netease/playback-spectrum';
     `,
   },
   bundle: true,
   format: 'esm',
+  define: { AUDIO_WORKER_SOURCE: JSON.stringify('/* controlled worker test */') },
   write: false,
 });
-const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain } = await import(
+const { PcmSpectrum, listenToPlayback, SpectrumHistory, Terrain, PlaybackSpectrum } = await import(
   'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].contents).toString('base64')
 );
 
 const originalPerformance = globalThis.performance;
 const originalWindow = globalThis.window;
+const originalWorker = globalThis.Worker;
 let now = 0;
 Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => now } });
 
@@ -107,6 +110,13 @@ try {
 
   const audio = new PcmSpectrum();
   const levels = new Float32Array(128);
+  const stepped = new PcmSpectrum();
+  stepped.push(tone(1000), 0);
+  stepped.sample(levels);
+  const cursorBefore = stepped.cursor;
+  stepped.push(tone(1000, 3200), 3200 / 48);
+  stepped.sample(levels, 2);
+  assert.equal(stepped.cursor - cursorBefore, 1600, 'Worker sampling lost the number of elapsed spectrum steps.');
   const arrivals = [0, 67, 152, 216, 344, 604, 671, 756, 823, 1083];
   let arrival = 0;
   for (now = 0; now <= 1100; now += 1000 / 60) {
@@ -209,8 +219,55 @@ try {
   assert.equal(consumed, 2);
   assert.equal(forwarded, 4);
   console.log('PASS: packet jitter, fresh backlog selection, idle decay, pause/seek/track events and cleanup.');
+
+  const workers = [];
+  globalThis.window.setTimeout = setTimeout;
+  globalThis.Worker = class {
+    messages = [];
+    terminated = false;
+    constructor() { workers.push(this); }
+    postMessage(message, transfer = []) {
+      this.messages.push(structuredClone(message, { transfer }));
+    }
+    terminate() { this.terminated = true; }
+    emit(message) { this.onmessage({ data: message }); }
+  };
+  const background = new PlaybackSpectrum();
+  const worker = workers[0];
+  worker.emit({ type: 'ready' });
+  const sharedBytes = tone(1000);
+  background.push(sharedBytes, 0);
+  assert.equal(sharedBytes.byteLength, 12_800, 'Transferring PCM detached the native packet.');
+  for (let sample = 0; sample < 8; sample++) background.sample(levels);
+  assert.equal(worker.messages.filter((message) => message.type === 'sample').length, 1, 'FFT requests accumulated.');
+  assert.equal(worker.messages.at(-1).steps, 1);
+  const oldRequest = worker.messages.at(-1).id;
+  background.reset();
+  worker.emit({ type: 'spectrum', id: oldRequest, levels: new Float32Array(128).fill(1) });
+  background.push(sharedBytes, 0);
+  background.sample(levels);
+  assert.ok(levels.every((value) => value === 0), 'A stale worker result revived the previous track.');
+  const currentRequest = worker.messages.at(-1).id;
+  worker.emit({ type: 'spectrum', id: currentRequest, levels: new Float32Array(128).fill(0.5) });
+  background.sample(levels);
+  assert.ok(levels.every((value) => value === 0.5));
+  background.dispose();
+  assert.ok(worker.terminated);
+  assert.equal(background.active, false);
+  background.sample(levels);
+  assert.ok(levels.every((value) => value === 0));
+
+  globalThis.Worker = class { constructor() { throw new Error('Worker blocked'); } };
+  const fallback = new PlaybackSpectrum();
+  fallback.push(sharedBytes, 0);
+  fallback.sample(levels);
+  assert.ok(Math.max(...levels) > 0, 'Worker failure disabled live audio.');
+  fallback.dispose();
+  console.log('PASS: bounded worker requests, native packet ownership, stale result rejection, shutdown and fallback.');
 } finally {
   Object.defineProperty(globalThis, 'performance', { configurable: true, value: originalPerformance });
   if (originalWindow === undefined) delete globalThis.window;
   else globalThis.window = originalWindow;
+  if (originalWorker === undefined) delete globalThis.Worker;
+  else globalThis.Worker = originalWorker;
 }

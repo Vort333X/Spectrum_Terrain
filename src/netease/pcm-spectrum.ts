@@ -67,7 +67,7 @@ export class PcmSpectrum {
     if (firstPacket) this.cursor = this.written;
   }
 
-  sample(target: Float32Array) {
+  sample(target: Float32Array, steps = 1) {
     const queued = this.written - this.cursor;
     if (!this.active || this.written === 0) {
       target.fill(0);
@@ -75,7 +75,7 @@ export class PcmSpectrum {
     }
     // Keep the 60 Hz history moving between the client's batched audio callbacks.
     if (queued > MAX_QUEUE_FRAMES) this.cursor = this.written - FRAMES_PER_ROW;
-    this.cursor = Math.min(this.written, this.cursor + FRAMES_PER_ROW);
+    this.cursor = Math.min(this.written, this.cursor + FRAMES_PER_ROW * steps);
     if (this.cursor !== this.analysed) this.transform();
     readSpectrumBands(this.bins, this.ranges, target);
     const stale = performance.now() - this.lastPacket;

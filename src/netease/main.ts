@@ -4,7 +4,7 @@ import { coverTheme, fitCover } from '../shared/artwork';
 import { SpectrumHistory } from '../shared/spectrum-history';
 import { Terrain } from '../shared/terrain';
 import { highResolutionCover, loadCover } from './cover-source';
-import { PcmSpectrum } from './pcm-spectrum';
+import { PlaybackSpectrum } from './playback-spectrum';
 import { listenToPlayback } from './playback-audio';
 import css from './style.css';
 
@@ -30,6 +30,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
     <summary>频谱设置</summary>
     <div class="spectrum-terrain-panel">
       <div class="spectrum-terrain-meta"><span data-audio role="status">等待播放音频</span><output data-fps>— FPS</output></div>
+      <div class="spectrum-terrain-meta"><span>频谱分析</span><output data-analysis></output></div>
       <div class="spectrum-terrain-actions">
         <button type="button" data-orbit aria-pressed="false">自动绕转</button>
         <button type="button" data-reset-view>复位视角</button>
@@ -66,12 +67,13 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   }
   bindEffects(form, (settings) => terrain.applyEffects(settings), true);
   const history = new SpectrumHistory(terrain, SAMPLES_PER_SECOND);
-  const audio = new PcmSpectrum();
+  const audio = new PlaybackSpectrum();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const freeze = tools.querySelector<HTMLInputElement>('#spectrum-terrain-freeze')!;
   const orbit = tools.querySelector<HTMLButtonElement>('[data-orbit]')!;
   const audioLabel = tools.querySelector<HTMLElement>('[data-audio]')!;
   const fpsLabel = tools.querySelector<HTMLOutputElement>('[data-fps]')!;
+  const analysisLabel = tools.querySelector<HTMLOutputElement>('[data-analysis]')!;
   const sample = (_time: number, levels: Float32Array) => audio.sample(levels);
   history.reset();
   orbit.addEventListener('click', () => {
@@ -113,6 +115,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
   });
 
   function updateAudioLabel() {
+    if (analysisLabel.value !== audio.mode) analysisLabel.value = audio.mode;
     const label = !stopAudio ? '客户端音频不可用' : audio.active ? '网易云实时音频' : '等待播放音频';
     if (audioLabel.textContent !== label) audioLabel.textContent = label;
   }
@@ -212,6 +215,7 @@ function mount(layout: HTMLElement, pane: HTMLElement, lyrics: HTMLElement) {
       resizeObserver.disconnect();
       canvas.removeEventListener('webglcontextlost', restoreCover);
       restoreCover();
+      audio.dispose();
       terrain.dispose();
       stage.remove();
     },
